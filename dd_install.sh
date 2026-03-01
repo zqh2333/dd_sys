@@ -39,7 +39,54 @@ elif [[ -f /etc/alpine-release ]]; then
 fi
 LOG_SUCCESS "系统更新与依赖检查完毕，环境就绪。"
 sleep 1
+# ==========================================
+# 智能检测并推荐 BBR 加速方案
+# ==========================================
+detect_and_recommend_bbr() {
+    local k_ver=$(uname -r | cut -d. -f1,2)
+    local qdisc="fq"
+    local algo="bbr"
+    local recommend_msg=""
 
+    # 算法匹配逻辑 (基于现代内核特性)
+    if (( $(echo "$k_ver >= 6.4" | bc -l) )); then
+        qdisc="fq_codel"
+        algo="bbr" 
+        recommend_msg="【顶配推荐】检测到 6.4+ 高版本内核，建议开启 fq_codel + 原生 BBR。"
+    elif (( $(echo "$k_ver >= 5.5" | bc -l) )); then
+        qdisc="fq_pie"
+        algo="bbr"
+        recommend_msg="【主流推荐】检测到 5.5+ 内核，建议开启 fq_pie + 原生 BBR (降低抖动)。"
+    elif (( $(echo "$k_ver >= 4.9" | bc -l) )); then
+        qdisc="fq"
+        algo="bbr"
+        recommend_msg="【稳定推荐】经典 BBR 组合，建议开启 fq + bbr。"
+    else
+        LOG_WARN "内核版本过低 ($k_ver)，不支持原生 BBR，建议通过功能 1 重装系统。"
+        return 1
+    fi
+
+    SUB_DIVIDER
+    LOG_INFO "当前内核版本: ${BOLD}$k_ver${NC}"
+    LOG_SUCCESS "$recommend_msg"
+    SUB_DIVIDER
+    
+    read -r -p "是否应用推荐配置？(y/n) [y]: " confirm
+    confirm=${confirm:-y}
+
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        # 清理旧配置，避免冲突
+        sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+        sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+        # 注入新参数
+        echo "net.core.default_qdisc=$qdisc" >> /etc/sysctl.conf
+        echo "net.ipv4.tcp_congestion_control=$algo" >> /etc/sysctl.conf
+        sysctl -p >/dev/null 2>&1
+        LOG_SUCCESS "加速策略 [$qdisc + $algo] 已成功激活！"
+    else
+        LOG_INFO "已取消自动优化。"
+    fi
+}
 # ==========================================
 # 主菜单循环框架
 # ==========================================
@@ -156,93 +203,47 @@ while true; do
                     read -r -p "按回车键继续..." 
                     ;;
                 4)
+                 # ==========================================
+                    # BBR 智能管理子面板
                     # ==========================================
-# 核心逻辑：智能检测并推荐加速方案
-# ==========================================
-detect_and_recommend_bbr() {
-    local k_ver=$(uname -r | cut -d. -f1,2)
-    local recommend_msg=""
-    local qdisc="fq"
-    local algo="bbr"
-
-    # 1. 检测内核版本并给出专家级建议
-    if (( $(echo "$k_ver >= 6.4" | bc -l) )); then
-        qdisc="fq_codel"
-        algo="bbr" 
-        recommend_msg="【顶配推荐】内核已支持 BBRv3 级别优化，建议使用 fq_codel + bbr。"
-    elif (( $(echo "$k_ver >= 5.5" | bc -l) )); then
-        qdisc="fq_pie"
-        algo="bbr"
-        recommend_msg="【主流推荐】内核支持 FQ-PIE，建议使用 fq_pie + bbr (有效缓解网络抖动)。"
-    elif (( $(echo "$k_ver >= 4.9" | bc -l) )); then
-        qdisc="fq"
-        algo="bbr"
-        recommend_msg="【稳定推荐】经典 BBR 组合，建议使用 fq + bbr。"
-    else
-        recommend_msg="【警告】内核版本过低 ($k_ver)，建议先使用 [功能 1] 重装为 Debian 12。"
-        LOG_WARN "$recommend_msg"
-        return 1
-    fi
-
-    echo -e "${BLUE}=========================================================${NC}"
-    LOG_INFO "系统内核版本: ${BOLD}$k_ver${NC}"
-    LOG_SUCCESS "$recommend_msg"
-    echo -e "${BLUE}=========================================================${NC}"
-    
-    read -r -p "是否应用推荐配置？(y/n) [y]: " confirm
-    confirm=${confirm:-y}
-
-    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-        # 清理旧配置
-        sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
-        sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
-        # 写入新配置
-        echo "net.core.default_qdisc=$qdisc" >> /etc/sysctl.conf
-        echo "net.ipv4.tcp_congestion_control=$algo" >> /etc/sysctl.conf
-        sysctl -p >/dev/null 2>&1
-        LOG_SUCCESS "加速策略 [$qdisc + $algo] 已成功激活！"
-    else
-        LOG_INFO "已取消自动优化。"
-    fi
-}
-
-# ==========================================
-# BBR 管理子菜单 (完全对接您的排版要求)
-# ==========================================
-while true; do
-    clear
-    curr_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
-    curr_qdisc=$(sysctl -n net.core.default_qdisc 2>/dev/null)
-
-    echo -e "————————————内核管理————————————"
-    echo -e " 1. 查看详细内核与架构信息"
-    echo -e " 2. ${YELLOW}智能检测并推荐加速方案 (推荐)${NC}"
-    echo -e " 3. 安装补丁 (已失效，不建议使用)"
-    echo -e "————————————加速管理————————————"
-    echo -e " 4. 强制开启 原生 BBR (fq + bbr)"
-    echo -e " 5. 开启 混合加速 (fq_pie + bbr)"
-    echo -e " 6. 开启 极致加速 (fq_codel + bbr)"
-    echo -e " 7. 开启 BBRplus (需特定内核，不推荐)"
-    echo -e " 8. 开启 锐速 (仅限旧版本内核)"
-    echo -e "————————————杂项管理————————————"
-    echo -e " 9. 卸载全部加速"
-    echo -e " 10. 系统配置优化 (100W 并发参数)"
-    echo -e " 11. 退出脚本"
-    echo -e "————————————————————————————————"
-    echo -e " 当前状态: 算法 [ ${GREEN}${curr_cc:-cubic}${NC} ] | 队列 [ ${CYAN}${curr_qdisc:-pfifo_fast}${NC} ]"
-    echo -e "————————————————————————————————"
-    
-    read -r -p " 请输入数字 [1-11]: " bbr_choice
-    
-    case $bbr_choice in
-        2)
-            detect_and_recommend_bbr
-            read -r -p "按回车键继续..." 
-            ;;
-        10)
-            LOG_INFO "正在注入 100W 并发优化参数..."
-            # 写入您提供的 sysctl 优化内容
-            cat > /etc/sysctl.conf << EOF
+                    while true; do
+                        clear
+                        curr_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+                        curr_qdisc=$(sysctl -n net.core.default_qdisc 2>/dev/null)
+                        echo -e "————————————内核管理————————————"
+                        echo -e " 1. 查看内核信息与 BBR 兼容性"
+                        echo -e " 2. ${YELLOW}自动检测并应用推荐方案 (推荐)${NC}"
+                        echo -e " 3. 安装补丁 (已弃用/不建议)"
+                        echo -e "————————————加速管理————————————"
+                        echo -e " 4. 强制开启 原生 BBR (fq + bbr)"
+                        echo -e " 5. 开启 混合加速 (fq_pie + bbr)"
+                        echo -e " 6. 开启 极致加速 (fq_codel + bbr)"
+                        echo -e " 7. 开启 BBRplus (需特定内核)"
+                        echo -e " 8. 使用 Lotserver (锐速)"
+                        echo -e "————————————杂项管理————————————"
+                        echo -e " 9. 卸载全部加速"
+                        echo -e " 10. 系统配置优化 (100W 并发参数)"
+                        echo -e " 11. 退出并返回"
+                        echo -e "————————————————————————————————"
+                        echo -e " 当前状态: 算法 [ ${GREEN}${curr_cc}${NC} ] | 队列 [ ${CYAN}${curr_qdisc}${NC} ]"
+                        echo -e "————————————————————————————————"
+                        read -r -p " 请输入数字 [1-11]: " bbr_opt
+                        case $bbr_opt in
+                            1) uname -a ; lsmod | grep bbr ; read -r -p "按回车..." ;;
+                            2) detect_and_recommend_bbr ; read -r -p "按回车..." ;;
+                            4) 
+                                sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+                                echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+                                echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+                                sysctl -p >/dev/null 2>&1 ; LOG_SUCCESS "已开启 BBR" ; read -r -p "按回车..." ;;
+                            9)
+                                sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+                                sysctl -p >/dev/null 2>&1 ; LOG_SUCCESS "已卸载" ; read -r -p "按回车..." ;;
+                            10)
+                                LOG_INFO "应用 100W 优化..."
+                                cat > /etc/sysctl.conf << EOF
 fs.file-max = 1000000
 fs.inotify.max_user_instances = 8192
 net.ipv4.tcp_tw_reuse = 1
@@ -259,21 +260,21 @@ net.core.netdev_max_backlog = 10240
 net.ipv4.tcp_slow_start_after_idle = 0
 net.ipv4.ip_forward = 1
 EOF
-            sysctl -p >/dev/null 2>&1
-            LOG_SUCCESS "系统资源优化完成！"
-            read -r -p "按回车键继续..." 
-            ;;
-        9)
-            sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
-            sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
-            sysctl -p >/dev/null 2>&1
-            LOG_SUCCESS "已恢复系统默认加速设置。"
-            read -r -p "按回车键继续..." 
-            ;;
-        11) break ;;
-        *) LOG_ERROR "该选项在现代内核下已不推荐，请使用选项 2 自动优化。" ; sleep 1 ;;
-    esac
-done
+                                sysctl -p >/dev/null 2>&1 ; LOG_SUCCESS "优化完成" ; read -r -p "按回车..." ;;
+                            11) break ;;
+                        esac
+                    done
+                    ;;
+                5)
+                    SUB_DIVIDER
+                    read -r -p "请输入新的 Root 密码: " new_root_pwd
+                    if [[ -n "$new_root_pwd" ]]; then
+                        echo "root:$new_root_pwd" | chpasswd && LOG_SUCCESS "修改成功" || LOG_ERROR "修改失败"
+                    fi
+                    read -r -p "按回车键继续..." ;;
+                0) break ;;
+            esac
+        done
     elif [[ "$main_choice" == "1" ]]; then
         # ==========================================
         # 功能 1：DD 重装系统
