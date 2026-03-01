@@ -26,16 +26,18 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-LOG_INFO "正在初始化脚本环境，检查必要依赖..."
+LOG_INFO "正在初始化脚本环境，自动更新系统并安装必要依赖 (curl, socat, wget)..."
 if [[ -f /etc/debian_version ]]; then
     apt-get update -y >/dev/null 2>&1
-    apt-get install -y wget curl iproute2 >/dev/null 2>&1
+    apt-get install -y wget curl socat iproute2 >/dev/null 2>&1
 elif [[ -f /etc/redhat-release ]]; then
-    yum install -y wget curl iproute >/dev/null 2>&1
+    yum update -y >/dev/null 2>&1
+    yum install -y wget curl socat iproute >/dev/null 2>&1
 elif [[ -f /etc/alpine-release ]]; then
-    apk add wget curl iproute2 >/dev/null 2>&1
+    apk update >/dev/null 2>&1
+    apk add wget curl socat iproute2 >/dev/null 2>&1
 fi
-LOG_SUCCESS "环境依赖就绪。"
+LOG_SUCCESS "系统更新与依赖检查完毕，环境就绪。"
 sleep 1
 
 clear
@@ -43,7 +45,7 @@ DIVIDER
 echo -e "${BOLD}       全平台 DD 重装与系统环境/SSL配置工具 (三合一版)      ${NC}"
 DIVIDER
 echo -e "  ${GREEN}1) [系统] 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
-echo -e "  ${CYAN}2) [环境] 一键配置系统环境${NC} (修改主机名/时区/Swap/开启BBR)"
+echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (子菜单：主机名/时区/Swap/BBR)"
 echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
 DIVIDER
 read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [1]: ${NC}")" main_choice
@@ -59,7 +61,6 @@ if [[ "$main_choice" == "3" ]]; then
     DIVIDER
     LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
     
-    # 已修正为您真实的 acme.sh 地址
     SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/acme.sh"
     
     curl -sSL -o ssl_manager.sh "$SSL_URL"
@@ -73,10 +74,7 @@ if [[ "$main_choice" == "3" ]]; then
     LOG_SUCCESS "SSL 脚本拉取成功，正在为您移交控制权..."
     SUB_DIVIDER
     
-    # 启动您的 SSL 脚本
     bash ssl_manager.sh
-    
-    # 执行完毕后清理临时文件
     rm -f ssl_manager.sh
     
     DIVIDER
@@ -86,78 +84,93 @@ if [[ "$main_choice" == "3" ]]; then
 
 elif [[ "$main_choice" == "2" ]]; then
     # ==========================================
-    # 功能 2：系统环境配置
+    # 功能 2：系统环境配置 (独立子菜单模式)
     # ==========================================
-    clear
-    DIVIDER
-    echo -e "${BOLD}                 [ 系统环境一键配置工具 ]                    ${NC}"
-    DIVIDER
-    
-    read -r -p "$(echo -e "请输入新的${CYAN}主机名 (Hostname)${NC} [vps]: ")" input_hostname
-    HOSTNAME_VAL=${input_hostname:-vps}
-    
-    read -r -p "$(echo -e "请输入${CYAN}系统时区${NC} [Asia/Shanghai]: ")" input_timezone
-    TIMEZONE_VAL=${input_timezone:-Asia/Shanghai}
-    
-    read -r -p "$(echo -e "请输入需要添加的${CYAN}Swap 大小(MB)${NC}，输入 0 为不添加 [1024]: ")" input_swap
-    SWAP_VAL=${input_swap:-1024}
-    
-    read -r -p "$(echo -e "是否开启 ${CYAN}BBR 网络加速${NC} (y/n) [y]: ")" input_bbr
-    input_bbr=${input_bbr:-y}
-
-    SUB_DIVIDER
-    LOG_INFO "正在应用您的专属配置，请稍候..."
-
-    # 设置主机名
-    if command -v hostnamectl >/dev/null 2>&1; then
-        hostnamectl set-hostname "$HOSTNAME_VAL"
-    else
-        echo "$HOSTNAME_VAL" > /etc/hostname
-        hostname "$HOSTNAME_VAL"
-    fi
-    LOG_SUCCESS "主机名已设置为: ${BOLD}$HOSTNAME_VAL${NC}"
-
-    # 设置时区
-    if command -v timedatectl >/dev/null 2>&1; then
-        timedatectl set-timezone "$TIMEZONE_VAL"
-    else
-        ln -sf /usr/share/zoneinfo/"$TIMEZONE_VAL" /etc/localtime
-    fi
-    LOG_SUCCESS "时区已设置为: ${BOLD}$TIMEZONE_VAL${NC}"
-
-    # 设置 Swap
-    if [[ "$SWAP_VAL" -gt 0 ]]; then
-        if swapon --show | grep -q "/swapfile"; then
-            LOG_WARN "检测到已存在 Swap，跳过创建。"
-        else
-            LOG_INFO "正在创建 ${SWAP_VAL}MB Swap 文件，这可能需要几十秒时间..."
-            dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_VAL" status=none
-            chmod 600 /swapfile
-            mkswap /swapfile >/dev/null 2>&1
-            swapon /swapfile
-            if ! grep -q "/swapfile" /etc/fstab; then
-                echo "/swapfile none swap sw 0 0" >> /etc/fstab
-            fi
-            LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并挂载成功!"
-        fi
-    fi
-
-    # 设置 BBR
-    if [[ "$input_bbr" == "y" || "$input_bbr" == "Y" ]]; then
-        if lsmod | grep -q bbr; then
-            LOG_SUCCESS "BBR 已经是开启状态，无需重复配置。"
-        else
-            echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-            echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-            sysctl -p >/dev/null 2>&1
-            LOG_SUCCESS "BBR 网络加速已开启!"
-        fi
-    fi
-
-    DIVIDER
-    echo -e "${GREEN}[完毕] 环境配置全部完成！建议断开 SSH 重新连接以使主机名等显示生效。${NC}"
-    DIVIDER
-    exit 0
+    while true; do
+        clear
+        DIVIDER
+        echo -e "${BOLD}                 [ 系统环境独立配置面板 ]                    ${NC}"
+        DIVIDER
+        echo -e "  ${CYAN}1) 修改主机名 (Hostname)${NC}"
+        echo -e "  ${CYAN}2) 修改系统时区 (Timezone)${NC}"
+        echo -e "  ${CYAN}3) 添加虚拟内存 (Swap)${NC}"
+        echo -e "  ${CYAN}4) 开启 BBR 网络加速${NC}"
+        echo -e "  ${GREEN}0) 退出工具${NC}"
+        DIVIDER
+        read -r -p "$(echo -e "${BOLD}请选择要执行的配置项 [0-4]: ${NC}")" env_choice
+        
+        case $env_choice in
+            1)
+                SUB_DIVIDER
+                read -r -p "$(echo -e "请输入新的${CYAN}主机名 (Hostname)${NC} [vps]: ")" input_hostname
+                HOSTNAME_VAL=${input_hostname:-vps}
+                if command -v hostnamectl >/dev/null 2>&1; then
+                    hostnamectl set-hostname "$HOSTNAME_VAL"
+                else
+                    echo "$HOSTNAME_VAL" > /etc/hostname
+                    hostname "$HOSTNAME_VAL"
+                fi
+                LOG_SUCCESS "主机名已设置为: ${BOLD}$HOSTNAME_VAL${NC} (重连 SSH 后生效)"
+                read -r -p "按回车键继续..." 
+                ;;
+            2)
+                SUB_DIVIDER
+                read -r -p "$(echo -e "请输入${CYAN}系统时区${NC} [Asia/Shanghai]: ")" input_timezone
+                TIMEZONE_VAL=${input_timezone:-Asia/Shanghai}
+                if command -v timedatectl >/dev/null 2>&1; then
+                    timedatectl set-timezone "$TIMEZONE_VAL"
+                else
+                    ln -sf /usr/share/zoneinfo/"$TIMEZONE_VAL" /etc/localtime
+                fi
+                LOG_SUCCESS "时区已设置为: ${BOLD}$TIMEZONE_VAL${NC}"
+                read -r -p "按回车键继续..." 
+                ;;
+            3)
+                SUB_DIVIDER
+                read -r -p "$(echo -e "请输入需要添加的${CYAN}Swap 大小(MB)${NC} [1024]: ")" input_swap
+                SWAP_VAL=${input_swap:-1024}
+                if [[ "$SWAP_VAL" -gt 0 ]]; then
+                    if swapon --show | grep -q "/swapfile"; then
+                        LOG_WARN "检测到已存在 Swap，跳过创建。"
+                    else
+                        LOG_INFO "正在创建 ${SWAP_VAL}MB Swap 文件，请稍候..."
+                        dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_VAL" status=none
+                        chmod 600 /swapfile
+                        mkswap /swapfile >/dev/null 2>&1
+                        swapon /swapfile
+                        if ! grep -q "/swapfile" /etc/fstab; then
+                            echo "/swapfile none swap sw 0 0" >> /etc/fstab
+                        fi
+                        LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并挂载成功!"
+                    fi
+                else
+                    LOG_WARN "输入值为 0 或非法，已取消。"
+                fi
+                read -r -p "按回车键继续..." 
+                ;;
+            4)
+                SUB_DIVIDER
+                LOG_INFO "正在检查并配置 BBR..."
+                if lsmod | grep -q bbr; then
+                    LOG_SUCCESS "BBR 已经是开启状态，无需重复配置。"
+                else
+                    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+                    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+                    sysctl -p >/dev/null 2>&1
+                    LOG_SUCCESS "BBR 网络加速已成功开启!"
+                fi
+                read -r -p "按回车键继续..." 
+                ;;
+            0)
+                LOG_SUCCESS "已退出环境配置面板。"
+                exit 0
+                ;;
+            *)
+                LOG_ERROR "无效的选项，请重新选择。"
+                sleep 1
+                ;;
+        esac
+    done
 
 elif [[ "$main_choice" == "1" ]]; then
     # ==========================================
@@ -280,7 +293,7 @@ elif [[ "$main_choice" == "1" ]]; then
         exit 0
     fi
 
-    LOG_INFO "开始下载顶级重装引擎 (zqh2333/reinstall)..."
+    LOG_INFO "开始从您的私人仓库下载顶级重装引擎 (zqh2333/reinstall)..."
     curl -sSL -O https://raw.githubusercontent.com/zqh2333/reinstall/main/reinstall.sh
     chmod +x reinstall.sh
 
