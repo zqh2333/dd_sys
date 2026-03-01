@@ -60,7 +60,7 @@ if [[ "$main_choice" == "3" ]]; then
     LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
     
     # ⚠️ 注意：这里默认您的 SSL 仓库主脚本名为 ssl.sh。如果不同，请修改下方的 URL！
-    SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/ssl.sh"
+    SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/acme.sh"
     
     curl -sSL -o ssl_manager.sh "$SSL_URL"
     if grep -q "404: Not Found" ssl_manager.sh || [[ ! -s ssl_manager.sh ]]; then
