@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# 终端色彩及日志输出美化函数
+# 终端色彩及日志输出美化函数 (纯字符无 Emoji 兼容版)
 # ==========================================
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -40,11 +40,11 @@ sleep 1
 
 clear
 DIVIDER
-echo -e "${BOLD}     🚀 全平台 DD 重装与系统环境/SSL配置工具 (三合一版)    ${NC}"
+echo -e "${BOLD}       全平台 DD 重装与系统环境/SSL配置工具 (三合一版)      ${NC}"
 DIVIDER
-echo -e "  ${GREEN}1) 🚀 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
-echo -e "  ${CYAN}2) 🛠️ 一键配置系统环境${NC} (修改主机名/时区/Swap/开启BBR)"
-echo -e "  ${YELLOW}3) 🔒 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
+echo -e "  ${GREEN}1) [系统] 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
+echo -e "  ${CYAN}2) [环境] 一键配置系统环境${NC} (修改主机名/时区/Swap/开启BBR)"
+echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
 DIVIDER
 read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [1]: ${NC}")" main_choice
 main_choice=${main_choice:-1}
@@ -55,16 +55,16 @@ if [[ "$main_choice" == "3" ]]; then
     # ==========================================
     clear
     DIVIDER
-    echo -e "${BOLD}              🔒 SSL 证书自动申请与续签工具                ${NC}"
+    echo -e "${BOLD}              [ SSL 证书自动申请与续签工具 ]               ${NC}"
     DIVIDER
     LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
     
-    # ⚠️ 注意：这里默认您的 SSL 仓库主脚本名为 ssl.sh。如果不同，请修改下方的 URL！
+    # 已修正为您真实的 acme.sh 地址
     SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/acme.sh"
     
     curl -sSL -o ssl_manager.sh "$SSL_URL"
     if grep -q "404: Not Found" ssl_manager.sh || [[ ! -s ssl_manager.sh ]]; then
-        LOG_ERROR "获取 SSL 脚本失败！请检查您的 SSL-Renewal 仓库中是否存在 ssl.sh 文件。"
+        LOG_ERROR "获取 SSL 脚本失败！请检查您的 SSL-Renewal 仓库中是否存在 acme.sh 文件。"
         rm -f ssl_manager.sh
         exit 1
     fi
@@ -80,7 +80,7 @@ if [[ "$main_choice" == "3" ]]; then
     rm -f ssl_manager.sh
     
     DIVIDER
-    LOG_SUCCESS "🎉 SSL 证书任务执行完毕！"
+    LOG_SUCCESS "SSL 证书任务执行完毕！"
     DIVIDER
     exit 0
 
@@ -90,7 +90,7 @@ elif [[ "$main_choice" == "2" ]]; then
     # ==========================================
     clear
     DIVIDER
-    echo -e "${BOLD}                 🛠️ 系统环境一键配置工具                    ${NC}"
+    echo -e "${BOLD}                 [ 系统环境一键配置工具 ]                    ${NC}"
     DIVIDER
     
     read -r -p "$(echo -e "请输入新的${CYAN}主机名 (Hostname)${NC} [vps]: ")" input_hostname
@@ -155,7 +155,7 @@ elif [[ "$main_choice" == "2" ]]; then
     fi
 
     DIVIDER
-    echo -e "${GREEN}🎉 环境配置全部完成！建议断开 SSH 重新连接以使主机名等显示生效。${NC}"
+    echo -e "${GREEN}[完毕] 环境配置全部完成！建议断开 SSH 重新连接以使主机名等显示生效。${NC}"
     DIVIDER
     exit 0
 
@@ -165,7 +165,7 @@ elif [[ "$main_choice" == "1" ]]; then
     # ==========================================
     clear
     DIVIDER
-    echo -e "${BOLD}       🚀 全平台/全网络/全自动 DD 重装脚本 (底层引擎)      ${NC}"
+    echo -e "${BOLD}       [ 全平台/全网络/全自动 DD 重装脚本 (底层引擎) ]      ${NC}"
     DIVIDER
 
     LOG_INFO "正在探测当前网络拓扑结构..."
@@ -192,7 +192,7 @@ elif [[ "$main_choice" == "1" ]]; then
     echo -e "   - 网关     : ${BOLD}$GATEWAY${NC}"
     echo -e "   - 子网掩码 : ${BOLD}$NETMASK${NC}"
     DIVIDER
-    echo -e "▶ 开始交互式配置 (直接按回车键将使用 ${CYAN}中括号${NC} 内的默认值)"
+    echo -e ">> 开始交互式配置 (直接按回车键将使用 ${CYAN}中括号${NC} 内的默认值)"
     SUB_DIVIDER
 
     echo "请选择要重装的目标系统类型："
@@ -280,7 +280,7 @@ elif [[ "$main_choice" == "1" ]]; then
         exit 0
     fi
 
-    LOG_INFO "开始从您的私人仓库下载顶级重装引擎 (zqh2333/reinstall)..."
+    LOG_INFO "开始下载顶级重装引擎 (zqh2333/reinstall)..."
     curl -sSL -O https://raw.githubusercontent.com/zqh2333/reinstall/main/reinstall.sh
     chmod +x reinstall.sh
 
@@ -294,7 +294,7 @@ elif [[ "$main_choice" == "1" ]]; then
     
     if [[ $? -eq 0 ]]; then
         DIVIDER
-        LOG_SUCCESS "🎉 所有引导修改已就绪！"
+        LOG_SUCCESS "[OK] 所有引导修改已就绪！"
         LOG_INFO "系统将在 3 秒后自动重启并真正进入后台格式化安装流程..."
         if [[ "$os_type_choice" == "2" ]]; then
             echo -e "【Windows】脱机下载 ISO 及注入驱动通常需 ${YELLOW}20-40 分钟${NC}，请通过 VNC 观察。"
