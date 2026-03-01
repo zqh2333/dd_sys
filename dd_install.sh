@@ -29,13 +29,13 @@ fi
 LOG_INFO "正在初始化脚本环境，自动更新系统并安装必要依赖 (curl, socat, wget)..."
 if [[ -f /etc/debian_version ]]; then
     apt-get update -y >/dev/null 2>&1
-    apt-get install -y wget curl socat iproute2 >/dev/null 2>&1
+    apt-get install -y wget curl socat iproute2 gawk >/dev/null 2>&1
 elif [[ -f /etc/redhat-release ]]; then
     yum update -y >/dev/null 2>&1
-    yum install -y wget curl socat iproute >/dev/null 2>&1
+    yum install -y wget curl socat iproute gawk >/dev/null 2>&1
 elif [[ -f /etc/alpine-release ]]; then
     apk update >/dev/null 2>&1
-    apk add wget curl socat iproute2 >/dev/null 2>&1
+    apk add wget curl socat iproute2 gawk >/dev/null 2>&1
 fi
 LOG_SUCCESS "系统更新与依赖检查完毕，环境就绪。"
 sleep 1
@@ -46,7 +46,7 @@ sleep 1
 while true; do
     clear
     DIVIDER
-    echo -e "${BOLD}       全平台 DD 重装与系统环境/SSL配置工具 (三合一版)      ${NC}"
+    echo -e "${BOLD}        全平台 DD 重装与系统环境/SSL配置工具 (三合一版)      ${NC}"
     DIVIDER
     echo -e "  ${GREEN}1) [系统] 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
     echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (主机名/时区/Swap/BBR/改密码)"
@@ -95,12 +95,12 @@ while true; do
         while true; do
             clear
             DIVIDER
-            echo -e "${BOLD}                 [ 系统环境独立配置面板 ]                    ${NC}"
+            echo -e "${BOLD}                 [ 系统环境独立配置面板 ]                  ${NC}"
             DIVIDER
             echo -e "  ${CYAN}1) 修改主机名 (Hostname)${NC}"
             echo -e "  ${CYAN}2) 修改系统时区 (Timezone)${NC}"
             echo -e "  ${CYAN}3) 添加虚拟内存 (Swap)${NC}"
-            echo -e "  ${CYAN}4) 开启或关闭 BBR 网络加速${NC}"
+            echo -e "  ${CYAN}4) 网络加速与内核管理面板 (BBR/锐速)${NC}"
             echo -e "  ${CYAN}5) 修改 Root 登录密码${NC}"
             echo -e "  ${GREEN}0) 返回上一菜单${NC}"
             DIVIDER
@@ -156,37 +156,157 @@ while true; do
                     read -r -p "按回车键继续..." 
                     ;;
                 4)
-                    SUB_DIVIDER
-                    LOG_INFO "当前内核 BBR 状态检测："
-                    if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
-                        echo -e "状态: ${GREEN}已开启 (BBR)${NC}"
-                    else
-                        echo -e "状态: ${YELLOW}未开启 (或非 BBR 算法)${NC}"
-                    fi
-                    SUB_DIVIDER
-                    echo -e "  1) 开启 BBR 网络加速"
-                    echo -e "  2) 关闭 BBR (恢复默认 cubic 算法)"
-                    read -r -p "$(echo -e "请选择操作 [1]: ")" bbr_choice
-                    bbr_choice=${bbr_choice:-1}
-                    
-                    if [[ "$bbr_choice" == "1" ]]; then
-                        sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
-                        sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
-                        echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-                        echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-                        sysctl -p >/dev/null 2>&1
-                        LOG_SUCCESS "BBR 网络加速已成功开启!"
-                    elif [[ "$bbr_choice" == "2" ]]; then
-                        sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
-                        sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
-                        echo "net.core.default_qdisc=pfifo_fast" >> /etc/sysctl.conf
-                        echo "net.ipv4.tcp_congestion_control=cubic" >> /etc/sysctl.conf
-                        sysctl -p >/dev/null 2>&1
-                        LOG_SUCCESS "BBR 网络加速已关闭 (恢复默认)!"
-                    else
-                        LOG_WARN "无效输入，已取消操作。"
-                    fi
-                    read -r -p "按回车键继续..." 
+                    # ==========================================
+                    # BBR/内核高级管理面板
+                    # ==========================================
+                    while true; do
+                        clear
+                        # 状态检测逻辑
+                        kernel_status="未知"
+                        accel_status="未安装加速模块"
+                        
+                        # 简单检测内核状态
+                        if lsmod | grep -q bbr || grep -q bbr /lib/modules/$(uname -r)/modules.builtin 2>/dev/null; then
+                            kernel_status="已安装 BBR 加速内核"
+                        elif [[ "$(uname -r | awk -F. '{print $1"."$2}')" > "4.8" ]]; then
+                            kernel_status="已安装 BBR 加速内核"
+                        else
+                            kernel_status="未安装加速内核"
+                        fi
+                        
+                        # 简单检测加速状态
+                        current_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+                        if [[ "$current_cc" == "bbr" ]]; then
+                            accel_status="已启动 BBR 加速"
+                        elif [[ "$current_cc" == "bbrplus" ]]; then
+                            accel_status="已启动 BBRplus 加速"
+                        elif [[ -n "$(lsmod | grep appex)" ]]; then
+                            accel_status="已启动 Lotserver(锐速) 加速"
+                        elif [[ "$current_cc" != "cubic" && "$current_cc" != "reno" && -n "$current_cc" ]]; then
+                            accel_status="已启动 $current_cc 加速"
+                        fi
+
+                        echo -e "————————————内核管理————————————"
+                        echo -e " 1. 安装 BBR/BBR魔改版内核"
+                        echo -e " 2. 安装 BBRplus版内核 "
+                        echo -e " 3. 安装 Lotserver(锐速)内核"
+                        echo -e "————————————加速管理————————————"
+                        echo -e " 4. 使用BBR加速"
+                        echo -e " 5. 使用BBR魔改版加速"
+                        echo -e " 6. 使用暴力BBR魔改版加速(不支持部分系统)"
+                        echo -e " 7. 使用BBRplus版加速"
+                        echo -e " 8. 使用Lotserver(锐速)加速"
+                        echo -e "————————————杂项管理————————————"
+                        echo -e " 9. 卸载全部加速"
+                        echo -e " 10. 系统配置优化"
+                        echo -e " 11. 退出脚本"
+                        echo -e "————————————————————————————————"
+                        echo -e ""
+                        echo -e " 当前状态: ${GREEN}${kernel_status}${NC} , ${YELLOW}${accel_status}${NC}"
+                        echo -e ""
+                        
+                        read -r -p " 请输入数字 [0-11]: " bbr_choice
+                        
+                        case $bbr_choice in
+                            4)
+                                SUB_DIVIDER
+                                LOG_INFO "正在通过 sysctl 配置并启用标准 BBR 加速..."
+                                sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+                                echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+                                echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+                                sysctl -p >/dev/null 2>&1
+                                LOG_SUCCESS "标准 BBR 加速已成功开启！"
+                                read -r -p "按回车键继续..." 
+                                ;;
+                            9)
+                                SUB_DIVIDER
+                                LOG_INFO "正在卸载所有网络加速并恢复系统默认..."
+                                sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+                                echo "net.core.default_qdisc=pfifo_fast" >> /etc/sysctl.conf
+                                echo "net.ipv4.tcp_congestion_control=cubic" >> /etc/sysctl.conf
+                                sysctl -p >/dev/null 2>&1
+                                chattr -i /etc/rc.local >/dev/null 2>&1
+                                sed -i '/lotserver/d' /etc/rc.local >/dev/null 2>&1
+                                LOG_SUCCESS "网络加速已卸载，恢复为 cubic 默认算法！"
+                                read -r -p "按回车键继续..." 
+                                ;;
+                            10)
+                                SUB_DIVIDER
+                                LOG_INFO "正在应用高级网络吞吐与系统连接数优化..."
+                                cat > /etc/security/limits.conf << EOF
+* soft nofile 1000000
+* hard nofile 1000000
+root soft nofile 1000000
+root hard nofile 1000000
+EOF
+                                ulimit -n 1000000
+                                # 清理旧的 sysctl 优化项以免冲突
+                                sed -i '/fs.file-max/d' /etc/sysctl.conf
+                                sed -i '/fs.inotify.max_user_instances/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_tw_reuse/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.ip_local_port_range/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_rmem/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_wmem/d' /etc/sysctl.conf
+                                sed -i '/net.core.somaxconn/d' /etc/sysctl.conf
+                                sed -i '/net.core.rmem_max/d' /etc/sysctl.conf
+                                sed -i '/net.core.wmem_max/d' /etc/sysctl.conf
+                                sed -i '/net.core.wmem_default/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_max_tw_buckets/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_max_syn_backlog/d' /etc/sysctl.conf
+                                sed -i '/net.core.netdev_max_backlog/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_slow_start_after_idle/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.ip_forward/d' /etc/sysctl.conf
+                                # 写入新的配置
+                                cat >> /etc/sysctl.conf << EOF
+fs.file-max = 1000000
+fs.inotify.max_user_instances = 8192
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_rmem = 16384 262144 8388608
+net.ipv4.tcp_wmem = 32768 524288 16777216
+net.core.somaxconn = 8192
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.wmem_default = 2097152
+net.ipv4.tcp_max_tw_buckets = 5000
+net.ipv4.tcp_max_syn_backlog = 10240
+net.core.netdev_max_backlog = 10240
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.ip_forward = 1
+EOF
+                                sysctl -p >/dev/null 2>&1
+                                LOG_SUCCESS "系统参数已成功覆盖并生效！"
+                                read -r -p "按回车键继续..." 
+                                ;;
+                            1|2|3|5|6|7|8)
+                                SUB_DIVIDER
+                                LOG_INFO "涉及复杂内核更换与模块编译，正在动态拉取 Linux-NetSpeed 核心组件..."
+                                wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
+                                if [[ -f tcp_net.sh ]]; then
+                                    chmod +x tcp_net.sh
+                                    # 利用 awk 精准重写脚本内的交互式菜单，自动代入您的选择
+                                    awk -v choice="$bbr_choice" '/read.*num/ && !done { print "num="choice; done=1; next } 1' tcp_net.sh > temp_net.sh
+                                    mv temp_net.sh tcp_net.sh
+                                    chmod +x tcp_net.sh
+                                    bash tcp_net.sh
+                                    rm -f tcp_net.sh
+                                else
+                                    LOG_ERROR "核心组件拉取失败，请检查网络！"
+                                fi
+                                read -r -p "按回车键继续..." 
+                                ;;
+                            0|11)
+                                LOG_INFO "退出加速管理面板..."
+                                break
+                                ;;
+                            *)
+                                LOG_ERROR "输入有误，请重新选择 [0-11]"
+                                sleep 1
+                                ;;
+                        esac
+                    done
                     ;;
                 5)
                     SUB_DIVIDER
