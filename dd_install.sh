@@ -40,15 +40,51 @@ sleep 1
 
 clear
 DIVIDER
-echo -e "${BOLD}       🚀 全平台 DD 重装与系统环境配置工具 (二合一版)      ${NC}"
+echo -e "${BOLD}     🚀 全平台 DD 重装与系统环境/SSL配置工具 (三合一版)    ${NC}"
 DIVIDER
 echo -e "  ${GREEN}1) 🚀 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
 echo -e "  ${CYAN}2) 🛠️ 一键配置系统环境${NC} (修改主机名/时区/Swap/开启BBR)"
+echo -e "  ${YELLOW}3) 🔒 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
 DIVIDER
 read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [1]: ${NC}")" main_choice
 main_choice=${main_choice:-1}
 
-if [[ "$main_choice" == "2" ]]; then
+if [[ "$main_choice" == "3" ]]; then
+    # ==========================================
+    # 功能 3：调用 SSL-Renewal 申请/续签证书
+    # ==========================================
+    clear
+    DIVIDER
+    echo -e "${BOLD}              🔒 SSL 证书自动申请与续签工具                ${NC}"
+    DIVIDER
+    LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
+    
+    # ⚠️ 注意：这里默认您的 SSL 仓库主脚本名为 ssl.sh。如果不同，请修改下方的 URL！
+    SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/ssl.sh"
+    
+    curl -sSL -o ssl_manager.sh "$SSL_URL"
+    if grep -q "404: Not Found" ssl_manager.sh || [[ ! -s ssl_manager.sh ]]; then
+        LOG_ERROR "获取 SSL 脚本失败！请检查您的 SSL-Renewal 仓库中是否存在 ssl.sh 文件。"
+        rm -f ssl_manager.sh
+        exit 1
+    fi
+    
+    chmod +x ssl_manager.sh
+    LOG_SUCCESS "SSL 脚本拉取成功，正在为您移交控制权..."
+    SUB_DIVIDER
+    
+    # 启动您的 SSL 脚本
+    bash ssl_manager.sh
+    
+    # 执行完毕后清理临时文件
+    rm -f ssl_manager.sh
+    
+    DIVIDER
+    LOG_SUCCESS "🎉 SSL 证书任务执行完毕！"
+    DIVIDER
+    exit 0
+
+elif [[ "$main_choice" == "2" ]]; then
     # ==========================================
     # 功能 2：系统环境配置
     # ==========================================
@@ -233,7 +269,7 @@ elif [[ "$main_choice" == "1" ]]; then
         echo -e "连接端口 : 默认 3389"
     fi
     echo -e "底层驱动 : 自动匹配 BIOS/EFI，分区表 ID 防写错"
-    echo -e "温馨提示 : 重装完成后，可重新运行本脚本选择[选项2]精装系统环境"
+    echo -e "温馨提示 : 重装完成后，可重新运行本脚本精装环境或申请 SSL 证书"
     DIVIDER
     LOG_WARN "继续操作将格式化整个硬盘，所有数据将永久丢失！"
     read -r -p "$(echo -e "确认无误并开始执行重装？(y/n) [n]: ")" confirm_install
@@ -244,8 +280,7 @@ elif [[ "$main_choice" == "1" ]]; then
         exit 0
     fi
 
-    LOG_INFO "开始从你的私人仓库下载顶级重装引擎 (zqh2333/reinstall)..."
-    # 这里已经替换为你 fork 后的仓库地址
+    LOG_INFO "开始从您的私人仓库下载顶级重装引擎 (zqh2333/reinstall)..."
     curl -sSL -O https://raw.githubusercontent.com/zqh2333/reinstall/main/reinstall.sh
     chmod +x reinstall.sh
 
@@ -257,7 +292,6 @@ elif [[ "$main_choice" == "1" ]]; then
         bash reinstall.sh $OS_CMD --password "$PASSWORD_VAL"
     fi
     
-    # 捕获上一条底层命令的退出状态，成功则触发重启
     if [[ $? -eq 0 ]]; then
         DIVIDER
         LOG_SUCCESS "🎉 所有引导修改已就绪！"
