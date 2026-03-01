@@ -30,4 +30,4 @@
 
 ### 🌍 国际网络直连版 (推荐)
 ```bash
-bash <(curl -sSL [https://raw.githubusercontent.com/zqh2333/dd_sys/main/dd_install.sh](https://raw.githubusercontent.com/zqh2333/dd_sys/main/dd_install.sh))
+bash <(curl -sSL https://raw.githubusercontent.com/zqh2333/dd_sys/main/dd_install.sh)
