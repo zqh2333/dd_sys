@@ -57,9 +57,6 @@ while true; do
     main_choice=${main_choice:-1}
 
     if [[ "$main_choice" == "3" ]]; then
-        # ==========================================
-        # 功能 3：调用 SSL-Renewal 申请/续签证书
-        # ==========================================
         clear
         DIVIDER
         echo -e "${BOLD}              [ SSL 证书自动申请与续签工具 ]               ${NC}"
@@ -89,18 +86,15 @@ while true; do
         read -r -p "按回车键返回主菜单..." 
 
     elif [[ "$main_choice" == "2" ]]; then
-        # ==========================================
-        # 功能 2：系统环境配置 (独立子菜单模式)
-        # ==========================================
         while true; do
             clear
             DIVIDER
-            echo -e "${BOLD}                 [ 系统环境独立配置面板 ]                  ${NC}"
+            echo -e "${BOLD}                  [ 系统环境独立配置面板 ]                   ${NC}"
             DIVIDER
             echo -e "  ${CYAN}1) 修改主机名 (Hostname)${NC}"
             echo -e "  ${CYAN}2) 修改系统时区 (Timezone)${NC}"
             echo -e "  ${CYAN}3) 添加虚拟内存 (Swap)${NC}"
-            echo -e "  ${CYAN}4) 网络加速与内核管理面板 (BBR/锐速)${NC}"
+            echo -e "  ${YELLOW}4) 网络加速与内核管理面板 (BBR/智能推荐)${NC}"
             echo -e "  ${CYAN}5) 修改 Root 登录密码${NC}"
             echo -e "  ${GREEN}0) 返回上一菜单${NC}"
             DIVIDER
@@ -156,85 +150,105 @@ while true; do
                     read -r -p "按回车键继续..." 
                     ;;
                 4)
-                    # ==========================================
-                    # BBR/内核高级管理面板
-                    # ==========================================
                     while true; do
                         clear
-                        # 状态检测逻辑
-                        kernel_status="未知"
-                        accel_status="未安装加速模块"
-                        
-                        # 简单检测内核状态
-                        if lsmod | grep -q bbr || grep -q bbr /lib/modules/$(uname -r)/modules.builtin 2>/dev/null; then
-                            kernel_status="已安装 BBR 加速内核"
-                        elif [[ "$(uname -r | awk -F. '{print $1"."$2}')" > "4.8" ]]; then
-                            kernel_status="已安装 BBR 加速内核"
-                        else
-                            kernel_status="未安装加速内核"
-                        fi
-                        
-                        # 简单检测加速状态
+                        # --- 增强型状态与推荐逻辑 ---
+                        kernel_version=$(uname -r | awk -F. '{print $1"."$2}')
+                        kernel_full=$(uname -r)
                         current_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
-                        if [[ "$current_cc" == "bbr" ]]; then
-                            accel_status="已启动 BBR 加速"
-                        elif [[ "$current_cc" == "bbrplus" ]]; then
-                            accel_status="已启动 BBRplus 加速"
-                        elif [[ -n "$(lsmod | grep appex)" ]]; then
-                            accel_status="已启动 Lotserver(锐速) 加速"
-                        elif [[ "$current_cc" != "cubic" && "$current_cc" != "reno" && -n "$current_cc" ]]; then
-                            accel_status="已启动 $current_cc 加速"
+                        
+                        # 检测内核是否支持 BBR (4.9以上)
+                        if [[ $(echo "$kernel_version >= 4.9" | bc) -eq 1 ]]; then
+                            support_bbr=true
+                            recommend_action="使用标准 BBR (内核已原生支持，最稳最快)"
+                            recommend_code="A"
+                        else
+                            support_bbr=false
+                            recommend_action="安装 BBRplus 或锐速内核 (当前内核版本太旧)"
+                            recommend_code="B"
                         fi
 
-                        echo -e "————————————内核管理————————————"
-                        echo -e " 1. 安装 BBR/BBR魔改版内核"
-                        echo -e " 2. 安装 BBRplus版内核 "
-                        echo -e " 3. 安装 Lotserver(锐速)内核"
-                        echo -e "————————————加速管理————————————"
-                        echo -e " 4. 使用BBR加速"
-                        echo -e " 5. 使用BBR魔改版加速"
-                        echo -e " 6. 使用暴力BBR魔改版加速(不支持部分系统)"
-                        echo -e " 7. 使用BBRplus版加速"
-                        echo -e " 8. 使用Lotserver(锐速)加速"
-                        echo -e "————————————杂项管理————————————"
-                        echo -e " 9. 卸载全部加速"
-                        echo -e " 10. 系统配置优化"
-                        echo -e " 11. 退出脚本"
-                        echo -e "————————————————————————————————"
-                        echo -e ""
-                        echo -e " 当前状态: ${GREEN}${kernel_status}${NC} , ${YELLOW}${accel_status}${NC}"
-                        echo -e ""
+                        # 检测当前运行状态
+                        if [[ "$current_cc" == "bbr" ]]; then
+                            accel_status="已开启标准 BBR"
+                        elif [[ "$current_cc" == "bbrplus" ]]; then
+                            accel_status="已开启 BBRplus"
+                        elif [[ -n "$(lsmod | grep appex)" ]]; then
+                            accel_status="已开启 锐速(Lotserver)"
+                        else
+                            accel_status="未开启加速 (当前: $current_cc)"
+                        fi
+
+                        echo -e "———————————— BBR 智能加速面板 ————————————"
+                        echo -e " 当前内核: ${CYAN}${kernel_full}${NC}"
+                        echo -e " 当前状态: ${YELLOW}${accel_status}${NC}"
+                        echo -e " 推荐操作: ${GREEN}${recommend_action}${NC}"
+                        echo -e "—————————————————————————————————————————"
+                        echo -e " ${BOLD}${YELLOW}R) [一键执行] 开启系统推荐的加速方案${NC}"
+                        echo -e "—————————————————————————————————————————"
+                        echo -e " 1. 开启标准 BBR (FQ)"
+                        echo -e " 2. 安装 BBRplus 内核并加速 (适合高丢包)"
+                        echo -e " 3. 安装 锐速(Lotserver) 内核并加速"
+                        echo -e " 4. 开启 BBR魔改版加速 (需特定内核)"
+                        echo -e " 9. 卸载全部加速并恢复默认"
+                        echo -e " 10. 系统参数高级优化 (提升并发能力)"
+                        echo -e " 0. 返回上一级"
+                        echo -e "—————————————————————————————————————————"
                         
-                        read -r -p " 请输入数字 [0-11]: " bbr_choice
+                        read -r -p " 请输入序号: " bbr_choice
                         
+                        # 处理推荐逻辑的快捷键
+                        if [[ "$bbr_choice" == "r" || "$bbr_choice" == "R" ]]; then
+                            if [[ "$recommend_code" == "A" ]]; then bbr_choice=1; else bbr_choice=2; fi
+                        fi
+
                         case $bbr_choice in
-                            4)
+                            1)
                                 SUB_DIVIDER
-                                LOG_INFO "正在通过 sysctl 配置并启用标准 BBR 加速..."
-                                sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
-                                echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-                                echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-                                sysctl -p >/dev/null 2>&1
-                                LOG_SUCCESS "标准 BBR 加速已成功开启！"
+                                if [[ "$support_bbr" == "true" ]]; then
+                                    LOG_INFO "正在开启官方标准 BBR..."
+                                    sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+                                    sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+                                    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+                                    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+                                    sysctl -p >/dev/null 2>&1
+                                    LOG_SUCCESS "标准 BBR 开启成功！"
+                                else
+                                    LOG_WARN "当前内核版本 ($kernel_version) 过低，无法直接开启 BBR，请先安装新内核。"
+                                fi
+                                read -r -p "按回车键继续..." 
+                                ;;
+                            2|3|4)
+                                SUB_DIVIDER
+                                LOG_INFO "正在拉取核心组件进行内核级操作..."
+                                wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
+                                if [[ -f tcp_net.sh ]]; then
+                                    chmod +x tcp_net.sh
+                                    # 映射选择到 tcp.sh 的对应菜单
+                                    [[ "$bbr_choice" == "2" ]] && target_num=2
+                                    [[ "$bbr_choice" == "3" ]] && target_num=3
+                                    [[ "$bbr_choice" == "4" ]] && target_num=5
+                                    bash tcp_net.sh
+                                    rm -f tcp_net.sh
+                                else
+                                    LOG_ERROR "获取组件失败，请检查网络。"
+                                fi
                                 read -r -p "按回车键继续..." 
                                 ;;
                             9)
                                 SUB_DIVIDER
-                                LOG_INFO "正在卸载所有网络加速并恢复系统默认..."
+                                LOG_INFO "正在卸载加速..."
                                 sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
                                 echo "net.core.default_qdisc=pfifo_fast" >> /etc/sysctl.conf
                                 echo "net.ipv4.tcp_congestion_control=cubic" >> /etc/sysctl.conf
                                 sysctl -p >/dev/null 2>&1
-                                chattr -i /etc/rc.local >/dev/null 2>&1
-                                sed -i '/lotserver/d' /etc/rc.local >/dev/null 2>&1
-                                LOG_SUCCESS "网络加速已卸载，恢复为 cubic 默认算法！"
+                                LOG_SUCCESS "已恢复系统默认加速。"
                                 read -r -p "按回车键继续..." 
                                 ;;
                             10)
                                 SUB_DIVIDER
-                                LOG_INFO "正在应用高级网络吞吐与系统连接数优化..."
+                                LOG_INFO "应用高级优化参数 (1GB 内存专用版)..."
                                 cat > /etc/security/limits.conf << EOF
 * soft nofile 1000000
 * hard nofile 1000000
@@ -242,69 +256,29 @@ root soft nofile 1000000
 root hard nofile 1000000
 EOF
                                 ulimit -n 1000000
-                                # 清理旧的 sysctl 优化项以免冲突
                                 sed -i '/fs.file-max/d' /etc/sysctl.conf
-                                sed -i '/fs.inotify.max_user_instances/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.tcp_tw_reuse/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.ip_local_port_range/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.tcp_rmem/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.tcp_wmem/d' /etc/sysctl.conf
                                 sed -i '/net.core.somaxconn/d' /etc/sysctl.conf
-                                sed -i '/net.core.rmem_max/d' /etc/sysctl.conf
-                                sed -i '/net.core.wmem_max/d' /etc/sysctl.conf
-                                sed -i '/net.core.wmem_default/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_max_tw_buckets/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_max_syn_backlog/d' /etc/sysctl.conf
-                                sed -i '/net.core.netdev_max_backlog/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_slow_start_after_idle/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.ip_forward/d' /etc/sysctl.conf
-                                # 写入新的配置
                                 cat >> /etc/sysctl.conf << EOF
 fs.file-max = 1000000
-fs.inotify.max_user_instances = 8192
 net.ipv4.tcp_tw_reuse = 1
 net.ipv4.ip_local_port_range = 1024 65535
-net.ipv4.tcp_rmem = 16384 262144 8388608
-net.ipv4.tcp_wmem = 32768 524288 16777216
-net.core.somaxconn = 8192
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.core.wmem_default = 2097152
-net.ipv4.tcp_max_tw_buckets = 5000
-net.ipv4.tcp_max_syn_backlog = 10240
-net.core.netdev_max_backlog = 10240
+net.ipv4.tcp_rmem = 4096 87380 67108864
+net.ipv4.tcp_wmem = 4096 65536 67108864
+net.core.somaxconn = 4096
+net.ipv4.tcp_max_syn_backlog = 4096
 net.ipv4.tcp_slow_start_after_idle = 0
 net.ipv4.ip_forward = 1
 EOF
                                 sysctl -p >/dev/null 2>&1
-                                LOG_SUCCESS "系统参数已成功覆盖并生效！"
+                                LOG_SUCCESS "参数优化完成！"
                                 read -r -p "按回车键继续..." 
                                 ;;
-                            1|2|3|5|6|7|8)
-                                SUB_DIVIDER
-                                LOG_INFO "涉及复杂内核更换与模块编译，正在动态拉取 Linux-NetSpeed 核心组件..."
-                                wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
-                                if [[ -f tcp_net.sh ]]; then
-                                    chmod +x tcp_net.sh
-                                    # 利用 awk 精准重写脚本内的交互式菜单，自动代入您的选择
-                                    awk -v choice="$bbr_choice" '/read.*num/ && !done { print "num="choice; done=1; next } 1' tcp_net.sh > temp_net.sh
-                                    mv temp_net.sh tcp_net.sh
-                                    chmod +x tcp_net.sh
-                                    bash tcp_net.sh
-                                    rm -f tcp_net.sh
-                                else
-                                    LOG_ERROR "核心组件拉取失败，请检查网络！"
-                                fi
-                                read -r -p "按回车键继续..." 
-                                ;;
-                            0|11)
-                                LOG_INFO "退出加速管理面板..."
-                                break
-                                ;;
-                            *)
-                                LOG_ERROR "输入有误，请重新选择 [0-11]"
-                                sleep 1
-                                ;;
+                            0) break ;;
+                            *) LOG_ERROR "输入有误" ; sleep 1 ;;
                         esac
                     done
                     ;;
@@ -325,7 +299,7 @@ EOF
                     ;;
                 0)
                     LOG_SUCCESS "正在返回主菜单..."
-                    break # 跳出当前内部循环，回到主菜单循环
+                    break 
                     ;;
                 *)
                     LOG_ERROR "无效的选项，请重新选择。"
@@ -335,12 +309,9 @@ EOF
         done
 
     elif [[ "$main_choice" == "1" ]]; then
-        # ==========================================
-        # 功能 1：DD 重装系统
-        # ==========================================
         clear
         DIVIDER
-        echo -e "${BOLD}       [ 全平台/全网络/全自动 DD 重装脚本 (底层引擎) ]      ${NC}"
+        echo -e "${BOLD}        [ 全平台/全网络/全自动 DD 重装脚本 (底层引擎) ]      ${NC}"
         DIVIDER
 
         LOG_INFO "正在探测当前网络拓扑结构..."
@@ -362,7 +333,7 @@ EOF
             NETMASK="自动获取"
         fi
 
-        LOG_SUCCESS "网络探测完成 (重装引擎将接管复杂网络)："
+        LOG_SUCCESS "网络探测完成："
         echo -e "   - 公网 IP  : ${BOLD}$MAIN_IP${NC}"
         echo -e "   - 网关     : ${BOLD}$GATEWAY${NC}"
         echo -e "   - 子网掩码 : ${BOLD}$NETMASK${NC}"
@@ -414,10 +385,6 @@ EOF
                 4) OS_CMD="windows 2019" ; OS_NAME="Windows Server 2019" ;;
                 *) OS_CMD="windows 10" ; OS_NAME="Windows 10 LTSC 2021" ;;
             esac
-        else
-            LOG_WARN "输入错误，默认使用 Debian 12。"
-            OS_CMD="debian 12"
-            OS_NAME="Debian 12"
         fi
 
         SUB_DIVIDER
@@ -443,8 +410,6 @@ EOF
             echo -e "登录密码 : ${YELLOW}$PASSWORD_VAL${NC}"
             echo -e "连接端口 : 默认 3389"
         fi
-        echo -e "底层驱动 : 自动匹配 BIOS/EFI，分区表 ID 防写错"
-        echo -e "温馨提示 : 重装完成后，可重新运行本脚本精装环境或申请 SSL 证书"
         DIVIDER
         LOG_WARN "继续操作将格式化整个硬盘，所有数据将永久丢失！"
         read -r -p "$(echo -e "确认无误并开始执行重装？(y/n) [n]: ")" confirm_install
@@ -456,11 +421,9 @@ EOF
             continue
         fi
 
-        LOG_INFO "开始从您的私人仓库下载顶级重装引擎 (zqh2333/reinstall)..."
+        LOG_INFO "开始下载重装引擎..."
         curl -sSL -O https://raw.githubusercontent.com/zqh2333/reinstall/main/reinstall.sh
         chmod +x reinstall.sh
-
-        LOG_SUCCESS "核心引擎下载完毕，正在组装参数并下发重装指令..."
 
         if [[ "$os_type_choice" == "1" ]]; then
             bash reinstall.sh $OS_CMD --password "$PASSWORD_VAL" --ssh-port "$PORT_VAL"
@@ -470,26 +433,19 @@ EOF
         
         if [[ $? -eq 0 ]]; then
             DIVIDER
-            LOG_SUCCESS "[OK] 所有引导修改已就绪！"
-            LOG_INFO "系统将在 3 秒后自动重启并真正进入后台格式化安装流程..."
-            if [[ "$os_type_choice" == "2" ]]; then
-                echo -e "【Windows】脱机下载 ISO 及注入驱动通常需 ${YELLOW}20-40 分钟${NC}，请通过 VNC 观察。"
-            else
-                echo -e "【Linux】通常需 ${YELLOW}5-15 分钟${NC}。稍后请使用新端口和密码重新连接。"
-            fi
-            DIVIDER
+            LOG_SUCCESS "[OK] 引导修改就绪，系统将在 3 秒后重启..."
             sleep 3
             reboot
         else
-            LOG_ERROR "底层引擎执行失败，请检查上方报错信息。已取消系统重启。"
+            LOG_ERROR "引擎执行失败。"
             read -r -p "按回车键返回主菜单..." 
         fi
 
     elif [[ "$main_choice" == "0" ]]; then
-        LOG_SUCCESS "已退出工具，祝您使用愉快！"
+        LOG_SUCCESS "已退出工具！"
         exit 0
     else
-        LOG_ERROR "无效的选项，请重新选择。"
+        LOG_ERROR "无效的选项。"
         sleep 1
     fi
 done
