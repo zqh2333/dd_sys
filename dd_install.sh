@@ -2,14 +2,24 @@
 # ==========================================
 # 阶段一：跨平台基础环境自举 (纯 sh 语法，无脑兼容各大纯净系统)
 # ==========================================
-if ! command -v bash >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v wget >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1 || ! command -v bc >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
-    echo "[INFO] 检测到基础环境不全，正在自动安装必要组件..."
+need_install=0
+# 强校验全局依赖清单
+for cmd in bash curl wget awk bc openssl unzip tar ping pgrep ip socat; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        need_install=1
+        break
+    fi
+done
+
+if [ "$need_install" -eq 1 ]; then
+    echo "[INFO] 检测到基础环境不全，正在自动补全脚本所需的全部必要组件..."
     if [ -f /etc/alpine-release ]; then
-        apk update >/dev/null 2>&1 && apk add --no-cache bash curl wget socat iproute2 gawk bc openssl unzip >/dev/null 2>&1
+        apk update >/dev/null 2>&1 && apk add --no-cache bash curl wget socat iproute2 gawk bc openssl unzip tar iputils procps >/dev/null 2>&1
     elif [ -f /etc/debian_version ]; then
-        apt-get update -y >/dev/null 2>&1 && apt-get install -y bash curl wget socat iproute2 gawk bc openssl unzip >/dev/null 2>&1
+        apt-get update -y >/dev/null 2>&1 && apt-get install -y bash curl wget socat iproute2 gawk bc openssl unzip tar iputils-ping procps >/dev/null 2>&1
     elif [ -f /etc/redhat-release ]; then
-        yum clean all >/dev/null 2>&1 && yum install -y bash curl wget socat iproute gawk bc openssl unzip >/dev/null 2>&1
+        # CentOS/Alma/Rocky 等红帽系
+        yum clean all >/dev/null 2>&1 && yum install -y bash curl wget socat iproute gawk bc openssl unzip tar iputils procps-ng >/dev/null 2>&1
     fi
 fi
 
@@ -24,8 +34,8 @@ fi
 # 阶段三：主业务逻辑与核心引擎
 # ==========================================
 
-# 拦截全局 Ctrl+C (SIGINT)，防止脚本闪退，安全返回上一级
-trap 'echo -e "\n${YELLOW}⚠️ 收到中断指令，正在终止当前操作并安全返回上一级...${NC}"; sleep 0.5' SIGINT
+# 全局安全锁：防止 Ctrl+C 直接杀掉整个母脚本
+trap 'echo -e "\b\b\n${YELLOW}⚠️ 操作已取消${NC}"; sleep 0.5' SIGINT
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -49,7 +59,7 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 # ---------------------------------------------------------
-# [核心引擎] 深度质检与增量收藏模块
+# [核心引擎] 深度质检与增量收藏模块 (严丝合缝对齐版)
 # ---------------------------------------------------------
 deep_check_and_save() {
     local test_list="$1"
@@ -68,17 +78,14 @@ deep_check_and_save() {
     echo -e "| 最终域名                 | 基础条件 | 握手时间 | 证书时间 | CDN  | 热门 | 推荐   | 页面状态 |"
     echo -e "+--------------------------+----------+----------+----------+------+------+--------+----------+"
     
-    # 局部 Trap：允许使用 Ctrl+C 直接中断耗时的循环质检，并结算当前进度
+    # 局部中断锁：允许在长耗时的质检中按 Ctrl+C 提前结算当前进度
     USER_ABORT=0
-    trap 'USER_ABORT=1' SIGINT
+    trap 'USER_ABORT=1; echo -e "\b\b\n${YELLOW}⚠️ 质检已被手动中止！正在结算已完成的数据...${NC}"' SIGINT
 
     for d in $test_list; do
-        if [ "$USER_ABORT" -eq 1 ]; then
-            echo -e "\n${YELLOW}⚠️ 质检已被手动中止！正在结算已完成的数据...${NC}"
-            break
-        fi
-
+        if [ "$USER_ABORT" -eq 1 ]; then break; fi
         [ -z "$d" ] && continue
+        
         total_domains=$((total_domains + 1))
         tmp_headers=$(mktemp)
         
@@ -182,13 +189,14 @@ deep_check_and_save() {
         echo -e "|${str_d}|${str_b}|${str_h}|${str_c}|${str_cdn}|${str_hot}|${str_rec}|${str_s}|"
         echo -e "+--------------------------+----------+----------+----------+------+------+--------+----------+"
         
+        # 极品归档提取
         if [[ "$rec_val" == "*****" || "$rec_val" == "****" ]]; then
             echo "$d" >> /tmp/good_snis.txt
         fi
     done
     
-    # 恢复全局拦截
-    trap 'echo -e "\n${YELLOW}⚠️ 收到中断指令，正在终止当前操作并安全返回上一级...${NC}"; sleep 0.5' SIGINT
+    # 恢复全局中断锁
+    trap 'echo -e "\b\b\n${YELLOW}⚠️ 操作已取消${NC}"; sleep 0.5' SIGINT
 
     end_time=$SECONDS
     total_time_s=$((end_time - start_time))
@@ -208,13 +216,13 @@ deep_check_and_save() {
         echo -e "\n${YELLOW}⚠️ 本次检测未找到值得入库的高优免死金牌 SNI。${NC}"
     fi
     
-    read -r -p "按回车键返回上一级..." || { echo; return; }
+    if ! read -r -p "按回车键返回上一级..."; then echo ""; fi
 }
 
-
-LOG_SUCCESS "初始化完成，防退出系统已生效。"
+LOG_SUCCESS "初始化完成，全局组件与防退出系统已生效。"
 sleep 0.5
 
+# ================== 主循环 ==================
 while true; do
     clear
     DIVIDER
@@ -229,7 +237,9 @@ while true; do
     echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
     
-    read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-6]: ${NC}")" main_choice || { echo; continue; }
+    if ! read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-6]: ${NC}")" main_choice; then
+        echo ""; continue
+    fi
     main_choice=${main_choice:-1}
 
     if [[ "$main_choice" == "6" ]]; then
@@ -260,7 +270,8 @@ while true; do
             printf -v display_time "%02d:%02d" "$curr_hr" "$curr_min"
             echo -e " 状态: ${GREEN}每天 ${BOLD}${display_time}${NC}${GREEN} (北京时间) 自动重启${NC}"
             SUB_DIVIDER
-            read -r -p "$(echo -e "👉 操作: [${GREEN}直接回车${NC}]修改时间 | [${RED}d${NC}]删除任务 | [${YELLOW}n${NC}]返回上一级 : ")" modify_reboot || { echo; continue; }
+            
+            if ! read -r -p "$(echo -e "👉 操作: [${GREEN}直接回车${NC}]修改时间 | [${RED}d${NC}]删除任务 | [${YELLOW}n${NC}]返回上一级 : ")" modify_reboot; then echo ""; continue; fi
             
             if [[ "$modify_reboot" == "d" || "$modify_reboot" == "D" ]]; then
                 reboot_cmd_path=$(command -v reboot || echo "/sbin/reboot")
@@ -268,15 +279,17 @@ while true; do
                 crontab /tmp/cron_backup && rm -f /tmp/cron_backup
                 LOG_SUCCESS "定时重启任务已成功删除！"
                 sleep 1.5; continue
-            elif [[ "$modify_reboot" == "n" || "$modify_reboot" == "N" ]]; then continue; fi
+            elif [[ "$modify_reboot" == "n" || "$modify_reboot" == "N" ]]; then 
+                continue 
+            fi
         else
             echo -e " 状态: ${YELLOW}未设置任何自动重启任务${NC}"
             SUB_DIVIDER
         fi
 
-        read -r -p "$(echo -e "👉 请输入重启时间的${CYAN}小时${NC} (0-23) [默认: 3]: ")" reboot_hour || { echo; continue; }
+        if ! read -r -p "$(echo -e "👉 请输入重启时间的${CYAN}小时${NC} (0-23) [默认: 3]: ")" reboot_hour; then echo ""; continue; fi
         reboot_hour=${reboot_hour:-3}
-        read -r -p "$(echo -e "👉 请输入重启时间的${CYAN}分钟${NC} (0-59) [默认: 0]: ")" reboot_minute || { echo; continue; }
+        if ! read -r -p "$(echo -e "👉 请输入重启时间的${CYAN}分钟${NC} (0-59) [默认: 0]: ")" reboot_minute; then echo ""; continue; fi
         reboot_minute=${reboot_minute:-0}
 
         if ! [[ "$reboot_hour" =~ ^[0-9]+$ ]] || [ "$reboot_hour" -lt 0 ] || [ "$reboot_hour" -gt 23 ]; then reboot_hour=3; fi
@@ -292,7 +305,6 @@ while true; do
         sleep 2
 
     elif [[ "$main_choice" == "5" ]]; then
-        # 这是 Option 5 的专属内层循环（子菜单）
         while true; do
             clear
             DIVIDER
@@ -305,11 +317,11 @@ while true; do
             echo -e "   0) 返回主菜单"
             DIVIDER
             
-            read -r -p "$(echo -e "${BOLD}请输入序号 [0-3]: ${NC}")" sni_choice || { echo; continue; }
+            if ! read -r -p "$(echo -e "${BOLD}请输入序号 [0-3]: ${NC}")" sni_choice; then echo ""; continue; fi
             
             case $sni_choice in
                 1) 
-                    read -r -p "$(echo -e "请输入需要测试的 ${CYAN}SNI 域名${NC}: ")" DOMAIN || { echo; continue; }
+                    if ! read -r -p "$(echo -e "请输入需要测试的 ${CYAN}SNI 域名${NC}: ")" DOMAIN; then echo ""; continue; fi
                     if [[ -n "$DOMAIN" ]]; then deep_check_and_save "$DOMAIN"; fi
                     ;;
                 2)
@@ -339,11 +351,11 @@ while true; do
 
                     if [ ! -x "./RealiTLScanner" ]; then LOG_ERROR "扫描器部署失败！请检查网络。"; sleep 2; continue; fi
 
-                    read -r -p "$(echo -e "👉 请输入${GREEN}扫描目标${NC} (IP段/域名/网址) [默认: 1.1.1.1]: ")" scan_target || { echo; continue; }
+                    if ! read -r -p "$(echo -e "👉 请输入${GREEN}扫描目标${NC} (IP段/域名/网址) [默认: 1.1.1.1]: ")" scan_target; then echo ""; continue; fi
                     scan_target=${scan_target:-1.1.1.1}
-                    read -r -p "$(echo -e "👉 请输入${GREEN}并发线程数${NC} [默认: 100]: ")" scan_threads || { echo; continue; }
+                    if ! read -r -p "$(echo -e "👉 请输入${GREEN}并发线程数${NC} [默认: 100]: ")" scan_threads; then echo ""; continue; fi
                     scan_threads=${scan_threads:-100}
-                    read -r -p "$(echo -e "👉 请输入单次探测${GREEN}超时时间${NC}(秒) [默认: 5]: ")" scan_timeout || { echo; continue; }
+                    if ! read -r -p "$(echo -e "👉 请输入单次探测${GREEN}超时时间${NC}(秒) [默认: 5]: ")" scan_timeout; then echo ""; continue; fi
                     scan_timeout=${scan_timeout:-5}
 
                     clear
@@ -354,13 +366,14 @@ while true; do
                     sleep 1
                     
                     rm -f out.csv
-                    # 临时修改拦截规则：遇到 Ctrl+C 不退回，而是流转到下一步
-                    trap 'echo -e "\n${YELLOW}[INFO] 盲扫已手动中断！正在无缝切入后续的质检归档流程...${NC}"' SIGINT
+                    # 盲扫时按 Ctrl+C，接管并流转到下一步
+                    trap 'echo -e "\b\b\n${GREEN}✅ 盲扫已手动中断！正在无缝切入质检归档流程...${NC}"' SIGINT
+                    
                     if [[ "$scan_target" == http* ]]; then ./RealiTLScanner -url "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
                     else ./RealiTLScanner -addr "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv; fi
                     
-                    # 恢复全局的 Ctrl+C 安全返回行为
-                    trap 'echo -e "\n${YELLOW}⚠️ 收到中断指令，正在终止当前操作并安全返回上一级...${NC}"; sleep 0.5' SIGINT
+                    # 恢复全局防闪退机制
+                    trap 'echo -e "\b\b\n${YELLOW}⚠️ 操作已取消${NC}"; sleep 0.5' SIGINT
                     
                     if [ -s "out.csv" ]; then
                         LOG_SUCCESS "初扫结束，正在提取有效名单进入质检引擎..."
@@ -384,7 +397,7 @@ while true; do
                     local_list=$(cat sni_collection.txt)
                     deep_check_and_save "$local_list"
                     ;;
-                0) break ;; # 按 0 退出当前子菜单，回到主菜单
+                0) break ;;
                 *) LOG_ERROR "输入有误" ; sleep 1 ;;
             esac
         done
@@ -406,7 +419,7 @@ while true; do
             LOG_ERROR "获取检测脚本失败，请检查网络。"
             rm -f ipcheck.sh
         fi
-        read -r -p "按回车键返回主菜单..." || { echo; continue; }
+        if ! read -r -p "按回车键返回主菜单..."; then echo ""; fi
 
     elif [[ "$main_choice" == "3" ]]; then
         clear
@@ -434,7 +447,6 @@ while true; do
         sleep 2
 
     elif [[ "$main_choice" == "2" ]]; then
-        # 这是 Option 2 的专属内层循环（子菜单）
         while true; do
             clear
             DIVIDER
@@ -448,14 +460,14 @@ while true; do
             echo -e "  ${GREEN}0) 返回上一菜单${NC}"
             DIVIDER
             
-            read -r -p "$(echo -e "${BOLD}请选择要执行的配置项 [0-5]: ${NC}")" env_choice || { echo; continue; }
+            if ! read -r -p "$(echo -e "${BOLD}请选择要执行的配置项 [0-5]: ${NC}")" env_choice; then echo ""; continue; fi
             
             case $env_choice in
                 1)
                     SUB_DIVIDER
                     current_host=$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null)
                     LOG_INFO "当前系统主机名: ${CYAN}${current_host}${NC}"
-                    read -r -p "$(echo -e "请输入新的${CYAN}主机名${NC} [直接回车跳过]: ")" input_hostname || { echo; continue; }
+                    if ! read -r -p "$(echo -e "请输入新的${CYAN}主机名${NC} [直接回车跳过]: ")" input_hostname; then echo ""; continue; fi
                     if [[ -n "$input_hostname" && "$input_hostname" != "$current_host" ]]; then
                         if command -v hostnamectl >/dev/null 2>&1; then hostnamectl set-hostname "$input_hostname"; else echo "$input_hostname" > /etc/hostname; hostname "$input_hostname"; fi
                         LOG_SUCCESS "主机名已设置: ${BOLD}$input_hostname${NC}"
@@ -466,7 +478,7 @@ while true; do
                     SUB_DIVIDER
                     current_time=$(date +"%Y-%m-%d %H:%M:%S %Z")
                     LOG_INFO "当前时区: ${CYAN}${current_time}${NC}"
-                    read -r -p "$(echo -e "请输入新${CYAN}时区${NC} [默认: Asia/Shanghai, 回车应用]: ")" input_timezone || { echo; continue; }
+                    if ! read -r -p "$(echo -e "请输入新${CYAN}时区${NC} [默认: Asia/Shanghai, 回车应用]: ")" input_timezone; then echo ""; continue; fi
                     TIMEZONE_VAL=${input_timezone:-Asia/Shanghai}
                     if command -v timedatectl >/dev/null 2>&1; then timedatectl set-timezone "$TIMEZONE_VAL"; else ln -sf /usr/share/zoneinfo/"$TIMEZONE_VAL" /etc/localtime; fi
                     LOG_SUCCESS "时区已设置: ${BOLD}$TIMEZONE_VAL${NC}"
@@ -481,7 +493,7 @@ while true; do
                     else rec_swap=4096; fi
                     
                     LOG_INFO "探测物理内存: ${CYAN}${phy_ram} MB${NC} | 推荐 Swap: ${GREEN}${rec_swap} MB${NC}"
-                    read -r -p "$(echo -e "请输入覆盖的 Swap 大小(MB) [默认: ${GREEN}${rec_swap}${NC}]: ")" input_swap || { echo; continue; }
+                    if ! read -r -p "$(echo -e "请输入覆盖的 Swap 大小(MB) [默认: ${GREEN}${rec_swap}${NC}]: ")" input_swap; then echo ""; continue; fi
                     SWAP_VAL=${input_swap:-$rec_swap}
                     
                     if [[ "$SWAP_VAL" -gt 0 ]] && [[ "$SWAP_VAL" =~ ^[0-9]+$ ]]; then
@@ -502,7 +514,6 @@ while true; do
                     fi
                     ;;
                 4)
-                    # 这是 BBR 的专属内层循环（孙菜单）
                     while true; do
                         clear
                         DIVIDER
@@ -524,7 +535,7 @@ while true; do
                         echo -e "  ${NC}0) 返回上一级${NC}"
                         DIVIDER
                         
-                        read -r -p "$(echo -e "${BOLD}请输入序号 [1]: ${NC}")" bbr_choice || { echo; continue; }
+                        if ! read -r -p "$(echo -e "${BOLD}请输入序号 [1]: ${NC}")" bbr_choice; then echo ""; continue; fi
                         bbr_choice=${bbr_choice:-1}
 
                         case $bbr_choice in
@@ -565,7 +576,7 @@ EOF
                             2)
                                 SUB_DIVIDER
                                 LOG_WARN "警告: 更换内核极易导致系统失联！"
-                                read -r -p "确认执行？(y/n) [n]: " confirm_kernel || { echo; continue; }
+                                if ! read -r -p "确认执行？(y/n) [n]: " confirm_kernel; then echo ""; continue; fi
                                 if [[ "$confirm_kernel" == "y" || "$confirm_kernel" == "Y" ]]; then
                                     wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
                                     chmod +x tcp_net.sh && bash tcp_net.sh && rm -f tcp_net.sh
@@ -585,21 +596,21 @@ EOF
                                 LOG_SUCCESS "已恢复默认。"
                                 sleep 1.5
                                 ;;
-                            0) break ;; # 按 0 退出孙菜单，退回到子菜单(环境面板)
+                            0) break ;;
                             *) LOG_ERROR "有误" ; sleep 1 ;;
                         esac
                     done
                     ;;
                 5)
                     SUB_DIVIDER
-                    read -r -p "$(echo -e "请输入新的 ${CYAN}Root 密码${NC} (留空跳过): ")" new_root_pwd || { echo; continue; }
+                    if ! read -r -p "$(echo -e "请输入新的 ${CYAN}Root 密码${NC} (留空跳过): ")" new_root_pwd; then echo ""; continue; fi
                     if [[ -n "$new_root_pwd" ]]; then
                         echo "root:$new_root_pwd" | chpasswd
                         if [[ $? -eq 0 ]]; then LOG_SUCCESS "修改成功！"; else LOG_ERROR "修改失败！"; fi
                     fi
                     sleep 1.5
                     ;;
-                0) break ;; # 按 0 退出当前子菜单，回到主菜单
+                0) break ;;
                 *) sleep 1 ;;
             esac
         done
@@ -631,7 +642,7 @@ EOF
         echo "请选择要重装的目标系统类型："
         echo -e "  ${GREEN}1) Linux${NC} (支持 Debian/Ubuntu/CentOS/Alpine 等)"
         echo -e "  ${BLUE}2) Windows${NC} (官方原版 ISO，自动注入 VirtIO 驱动)"
-        read -r -p "$(echo -e "请输入序号 [1]: ")" os_type_choice || { echo; continue; }
+        if ! read -r -p "$(echo -e "请输入序号 [1]: ")" os_type_choice; then echo ""; continue; fi
         os_type_choice=${os_type_choice:-1}
 
         if [[ "$os_type_choice" == "1" ]]; then
@@ -643,7 +654,7 @@ EOF
             echo "  4) Ubuntu 20.04"
             echo "  5) Alpine Linux (极少内存占用，适合低配小鸡)"
             echo "  6) AlmaLinux 9"
-            read -r -p "$(echo -e "请输入序号 [1]: ")" linux_choice || { echo; continue; }
+            if ! read -r -p "$(echo -e "请输入序号 [1]: ")" linux_choice; then echo ""; continue; fi
             linux_choice=${linux_choice:-1}
             case $linux_choice in
                 1) OS_CMD="debian 12" ; OS_NAME="Debian 12" ;;
@@ -661,7 +672,7 @@ EOF
             echo "  2) Windows 11 Pro"
             echo "  3) Windows Server 2022"
             echo "  4) Windows Server 2019"
-            read -r -p "$(echo -e "请输入序号 [1]: ")" win_choice || { echo; continue; }
+            if ! read -r -p "$(echo -e "请输入序号 [1]: ")" win_choice; then echo ""; continue; fi
             win_choice=${win_choice:-1}
             case $win_choice in
                 1) OS_CMD="windows 10" ; OS_NAME="Windows 10 LTSC 2021" ;;
@@ -675,11 +686,11 @@ EOF
         fi
 
         SUB_DIVIDER
-        read -r -p "$(echo -e "请输入 ${CYAN}Root/Administrator 密码${NC} [qwertyui]: ")" input_password || { echo; continue; }
+        if ! read -r -p "$(echo -e "请输入 ${CYAN}Root/Administrator 密码${NC} [qwertyui]: ")" input_password; then echo ""; continue; fi
         PASSWORD_VAL=${input_password:-qwertyui}
 
         if [[ "$os_type_choice" == "1" ]]; then
-            read -r -p "$(echo -e "请输入重装后的 ${CYAN}SSH 端口${NC} [22]: ")" input_port || { echo; continue; }
+            if ! read -r -p "$(echo -e "请输入重装后的 ${CYAN}SSH 端口${NC} [22]: ")" input_port; then echo ""; continue; fi
             PORT_VAL=${input_port:-22}
         fi
 
@@ -699,7 +710,7 @@ EOF
         fi
         DIVIDER
         LOG_WARN "警告：继续操作将格式化整个硬盘，当前系统所有数据将永久丢失！"
-        read -r -p "$(echo -e "确认无误并开始执行重装？(y/n) [n]: ")" confirm_install || { echo; continue; }
+        if ! read -r -p "$(echo -e "确认无误并开始执行重装？(y/n) [n]: ")" confirm_install; then echo ""; continue; fi
         confirm_install=${confirm_install:-n}
 
         if [[ "$confirm_install" != "y" && "$confirm_install" != "Y" ]]; then
