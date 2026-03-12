@@ -16,6 +16,7 @@ fi
 # ==========================================
 # 阶段二：核心魔法 - 解释器升维
 # ==========================================
+# 检测当前是不是 Bash。如果不是（比如刚才是用 sh 启动的），就让 bash 接管并重新运行当前脚本
 if [ -z "$BASH_VERSION" ]; then
     exec bash "$0" "$@"
 fi
@@ -60,13 +61,48 @@ while true; do
     echo -e "  ${GREEN}1) [系统] 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
     echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (主机名/时区/Swap/BBR/改密码)"
     echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
+    echo -e "  ${BLUE}4) [测试] 节点流媒体解锁检测${NC} (Netflix/Disney+/YouTube 等)"
     echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
     
-    read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-3]: ${NC}")" main_choice
-    main_choice=${main_choice:-1} # 默认值为 1
+    read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-4]: ${NC}")" main_choice
+    main_choice=${main_choice:-1}
 
-    if [[ "$main_choice" == "3" ]]; then
+    if [[ "$main_choice" == "4" ]]; then
+        # --------------------------------------------------
+        # 模块 4: 流媒体解锁检测
+        # --------------------------------------------------
+        clear
+        DIVIDER
+        echo -e "${BOLD}              [ 全球流媒体解锁及地域限制检测 ]               ${NC}"
+        DIVIDER
+        LOG_INFO "正在拉取业界权威的流媒体检测组件 (RegionRestrictionCheck)..."
+        
+        # 使用官方 raw 地址以确保稳定拉取
+        curl -sSL -o media_check.sh "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh"
+        
+        if [[ -s media_check.sh ]]; then
+            chmod +x media_check.sh
+            LOG_SUCCESS "组件拉取成功，即将为您呈现检测报告！"
+            SUB_DIVIDER
+            
+            # 执行流媒体检测脚本
+            bash media_check.sh
+            
+            # 执行完毕后清理残留文件，保持系统整洁
+            rm -f media_check.sh
+            
+            DIVIDER
+            LOG_SUCCESS "流媒体解锁检测执行完毕！"
+        else
+            LOG_ERROR "获取流媒体检测脚本失败，请检查服务器网络与 GitHub 的连接。"
+            rm -f media_check.sh
+        fi
+        
+        DIVIDER
+        read -r -p "按回车键返回主菜单..." 
+
+    elif [[ "$main_choice" == "3" ]]; then
         # --------------------------------------------------
         # 模块 3: SSL 证书申请
         # --------------------------------------------------
@@ -109,8 +145,8 @@ while true; do
             DIVIDER
             echo -e "  ${CYAN}1) 修改主机名 (Hostname)${NC}"
             echo -e "  ${CYAN}2) 修改系统时区 (Timezone)${NC}"
-            echo -e "  ${CYAN}3) 添加虚拟内存 (Swap)${NC}"
-            echo -e "  ${YELLOW}4) 网络加速与内核管理面板 (BBR/智能推荐)${NC}"
+            echo -e "  ${CYAN}3) 添加虚拟内存 (Swap自动推荐)${NC}"
+            echo -e "  ${YELLOW}4) 网络加速与内核管理面板 (BBR智能推荐)${NC}"
             echo -e "  ${CYAN}5) 修改 Root 登录密码${NC}"
             echo -e "  ${GREEN}0) 返回上一菜单${NC}"
             DIVIDER
@@ -145,13 +181,33 @@ while true; do
                     ;;
                 3)
                     SUB_DIVIDER
-                    read -r -p "$(echo -e "请输入需要添加的${CYAN}Swap 大小(MB)${NC} [1024]: ")" input_swap
-                    SWAP_VAL=${input_swap:-1024}
+                    # --- 智能检测与计算推荐 Swap 大小 ---
+                    phy_ram=$(free -m | awk '/^Mem:/{print $2}')
+                    
+                    if [ -z "$phy_ram" ] || ! [[ "$phy_ram" =~ ^[0-9]+$ ]]; then
+                        phy_ram=1024
+                        rec_swap=1024
+                    elif [ "$phy_ram" -le 2048 ]; then
+                        rec_swap=$((phy_ram * 2))
+                    elif [ "$phy_ram" -le 8192 ]; then
+                        rec_swap=$phy_ram
+                    else
+                        rec_swap=4096
+                    fi
+                    
+                    echo -e " 探测到物理内存: ${CYAN}${phy_ram} MB${NC}"
+                    echo -e " 智能推荐 Swap : ${GREEN}${rec_swap} MB${NC}"
+                    SUB_DIVIDER
+                    
+                    read -r -p "$(echo -e "请输入需要添加的${CYAN}Swap 大小(MB)${NC} [默认: ${GREEN}${rec_swap}${NC}]: ")" input_swap
+                    
+                    SWAP_VAL=${input_swap:-$rec_swap}
+                    
                     if [[ "$SWAP_VAL" -gt 0 ]] && [[ "$SWAP_VAL" =~ ^[0-9]+$ ]]; then
                         if swapon --show | grep -q "/swapfile"; then
-                            LOG_WARN "检测到已存在 Swap，跳过创建。"
+                            LOG_WARN "检测到系统已存在 Swap 挂载，跳过创建以防冲突。"
                         else
-                            LOG_INFO "正在创建 ${SWAP_VAL}MB Swap 文件，请稍候..."
+                            LOG_INFO "正在为您创建 ${SWAP_VAL}MB 的 Swap 文件，请稍候 (视硬盘性能可能需要十几秒)..."
                             dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_VAL" status=none
                             chmod 600 /swapfile
                             mkswap /swapfile >/dev/null 2>&1
@@ -159,10 +215,10 @@ while true; do
                             if ! grep -q "/swapfile" /etc/fstab; then
                                 echo "/swapfile none swap sw 0 0" >> /etc/fstab
                             fi
-                            LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并挂载成功!"
+                            LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并永久挂载成功!"
                         fi
                     else
-                        LOG_WARN "输入值非法，已取消。"
+                        LOG_WARN "输入值非法，已取消创建。"
                     fi
                     read -r -p "按回车键继续..." 
                     ;;
@@ -173,12 +229,10 @@ while true; do
                         echo -e "${BOLD}              [ 网络加速与智能内核优化面板 ]               ${NC}"
                         DIVIDER
                         
-                        # --- 核心智能检测引擎 ---
                         kernel_version=$(uname -r | awk -F. '{print $1"."$2}')
                         kernel_full=$(uname -r)
                         current_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
                         
-                        # 1. 虚拟化环境检测
                         if [ -f /proc/user_beancounters ]; then
                             virt_type="OpenVZ"
                         elif command -v systemd-detect-virt >/dev/null 2>&1; then
@@ -187,7 +241,6 @@ while true; do
                             virt_type="KVM/Unknown"
                         fi
 
-                        # 2. 状态推断
                         if [[ "$current_cc" == "bbr" ]]; then
                             accel_status="${GREEN}已开启官方 BBR${NC}"
                         elif [[ "$current_cc" == "bbrplus" ]]; then
@@ -216,7 +269,6 @@ while true; do
                                 SUB_DIVIDER
                                 LOG_INFO "开始执行智能网络优化流程..."
                                 
-                                # 步骤A: 虚拟化防御机制
                                 if [[ "$virt_type" == *"openvz"* || "$virt_type" == *"lxc"* || "$virt_type" == *"OpenVZ"* ]]; then
                                     LOG_WARN "检测到容器虚拟化 ($virt_type)，无法修改底层内核限制。"
                                     LOG_INFO "将尝试直接开启原生 BBR (需宿主机支持)..."
@@ -224,7 +276,6 @@ while true; do
                                     LOG_INFO "检测到独立内核环境 ($virt_type)，安全校验通过。"
                                 fi
 
-                                # 步骤B: 内核要求校验与 BBR 开启
                                 if [[ $(echo "$kernel_version >= 4.9" | bc 2>/dev/null || echo 1) -eq 1 ]]; then
                                     LOG_INFO "正在配置 TCP BBR 拥塞控制算法..."
                                     sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
@@ -235,7 +286,6 @@ while true; do
                                     LOG_WARN "内核版本 ($kernel_version) 较老，无法保证 BBR 原生支持！建议使用菜单 2 升级内核。"
                                 fi
 
-                                # 步骤C: 高级 TCP 与并发参数优化
                                 LOG_INFO "正在注入高级网络吞吐量优化参数..."
                                 
                                 for key in fs.file-max net.ipv4.tcp_tw_reuse net.ipv4.ip_local_port_range net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.core.somaxconn net.ipv4.tcp_max_syn_backlog net.ipv4.tcp_fastopen; do
@@ -488,7 +538,7 @@ EOF
         LOG_SUCCESS "已退出全平台配置工具，祝您使用愉快！"
         exit 0
     else
-        LOG_ERROR "无效的选项，请输入 0-3 之间的数字。"
+        LOG_ERROR "无效的选项，请输入 0-4 之间的数字。"
         sleep 1
     fi
 done
