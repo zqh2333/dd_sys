@@ -27,5 +27,5 @@
 
 ### 🌍 国际网络直连版 (推荐)
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/zqh2333/dd_sys/main/dd_install.sh)
+sh -c 'if ! command -v bash >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then echo "正在准备基础环境..."; if [ -f /etc/alpine-release ]; then apk add --no-cache bash curl; elif [ -f /etc/debian_version ]; then apt-get update -y && apt-get install -y bash curl; elif [ -f /etc/redhat-release ]; then yum install -y bash curl; fi; fi; bash <(curl -sSL https://raw.githubusercontent.com/zqh2333/dd_sys/main/dd_install.sh)'
 
