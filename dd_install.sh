@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # ==========================================
 # 终端色彩及日志输出美化函数 (纯字符无 Emoji 兼容版)
@@ -19,29 +19,47 @@ DIVIDER() { echo -e "${BLUE}====================================================
 SUB_DIVIDER() { echo -e "${CYAN}---------------------------------------------------------${NC}"; }
 
 # ==========================================
-# 检查是否为 root 用户
+# 跨平台环境自举与检查
 # ==========================================
-if [[ $EUID -ne 0 ]]; then
+# 检查是否为 root 用户 (使用 id -u 替代 $EUID，兼容性更强)
+if [ "$(id -u)" != "0" ]; then
     LOG_ERROR "权限不足！请使用 root 用户运行此脚本。"
     exit 1
 fi
 
-LOG_INFO "正在初始化脚本环境，自动更新系统并安装必要依赖 (curl, socat, wget)..."
-if [[ -f /etc/debian_version ]]; then
-    apt-get update -y >/dev/null 2>&1
-    apt-get install -y wget curl socat iproute2 gawk >/dev/null 2>&1
-elif [[ -f /etc/redhat-release ]]; then
-    yum update -y >/dev/null 2>&1
-    yum install -y wget curl socat iproute gawk >/dev/null 2>&1
-elif [[ -f /etc/alpine-release ]]; then
-    apk update >/dev/null 2>&1
-    apk add wget curl socat iproute2 gawk >/dev/null 2>&1
-fi
+LOG_INFO "正在初始化脚本环境，自动更新系统并安装必要依赖..."
+
+# 封装依赖安装逻辑，兼容各大发行版
+install_dependencies() {
+    if [ -f /etc/alpine-release ]; then
+        apk update >/dev/null 2>&1
+        apk add --no-cache bash wget curl socat iproute2 gawk bc >/dev/null 2>&1
+    elif [ -f /etc/debian_version ]; then
+        apt-get update -y >/dev/null 2>&1
+        apt-get install -y bash wget curl socat iproute2 gawk bc >/dev/null 2>&1
+    elif [ -f /etc/redhat-release ]; then
+        yum clean all >/dev/null 2>&1
+        yum install -y bash wget curl socat iproute gawk bc >/dev/null 2>&1
+    else
+        LOG_WARN "未识别的操作系统版本，将尝试跳过依赖安装步骤..."
+    fi
+}
+
+install_dependencies
+
+# 双重安全校验：确保核心依赖已成功挂载
+for pkg in curl wget bash awk ip bc; do
+    if ! command -v $pkg >/dev/null 2>&1; then
+        LOG_ERROR "致命错误：核心依赖 '$pkg' 安装失败！请检查服务器网络或软件源。"
+        exit 1
+    fi
+done
+
 LOG_SUCCESS "系统更新与依赖检查完毕，环境就绪。"
 sleep 1
 
 # ==========================================
-# 主菜单循环框架
+# 主菜单循环框架 (逻辑保持原样，未作修改)
 # ==========================================
 while true; do
     clear
@@ -224,7 +242,6 @@ while true; do
                                 wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
                                 if [[ -f tcp_net.sh ]]; then
                                     chmod +x tcp_net.sh
-                                    # 映射选择到 tcp.sh 的对应菜单
                                     [[ "$bbr_choice" == "2" ]] && target_num=2
                                     [[ "$bbr_choice" == "3" ]] && target_num=3
                                     [[ "$bbr_choice" == "4" ]] && target_num=5
