@@ -29,6 +29,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+MAGENTA='\033[1;35m'
 BOLD='\033[1m'
 NC='\033[0m'
 
@@ -55,7 +56,7 @@ while true; do
     echo -e "  ${GREEN}1) [系统] 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
     echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (主机名/时区/Swap/BBR/改密码)"
     echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
-    echo -e "  ${BLUE}4) [测试] IP 质量与解锁综合检测${NC} (IP风险/流媒体/AI/邮局)"
+    echo -e "  ${MAGENTA}4) [测试] IP 质量与解锁综合检测${NC} (IP风险/流媒体/AI/邮局)"
     echo -e "  ${CYAN}5) [节点] 优质 SNI 连通性测试与全局探测${NC} (VLESS-Reality必备)"
     echo -e "  ${GREEN}6) [维护] 每日定时重启与时区校准${NC} (防假死/清理内存碎片)"
     echo -e "  ${RED}0) 退出脚本${NC}"
@@ -102,10 +103,38 @@ while true; do
         fi
 
         SUB_DIVIDER
-        LOG_INFO "3. 配置每日定时准时释放 (重启) 时间"
-        read -r -p "$(echo -e "👉 请输入重启时间的小时 (0-23) [默认: 3]: ")" reboot_hour
+        LOG_INFO "3. 每日定时准时释放 (重启) 任务配置"
+        
+        # 获取当前的重启任务状态
+        current_reboot=$(crontab -l 2>/dev/null | grep -E "/sbin/reboot|reboot" | grep -v "^#" | head -n 1)
+        if [ -n "$current_reboot" ]; then
+            curr_min=$(echo "$current_reboot" | awk '{print $1}')
+            curr_hr=$(echo "$current_reboot" | awk '{print $2}')
+            printf -v display_time "%02d:%02d" "$curr_hr" "$curr_min"
+            echo -e " 当前已设定的任务: ${GREEN}每天 ${BOLD}${display_time}${NC}${GREEN} (北京时间) 自动重启${NC}"
+            SUB_DIVIDER
+            read -r -p "请选择操作 (y: 修改时间 / d: 删除该任务 / n: 保持并返回) [n]: " modify_reboot
+            modify_reboot=${modify_reboot:-n}
+            
+            if [[ "$modify_reboot" == "d" || "$modify_reboot" == "D" ]]; then
+                reboot_cmd_path=$(command -v reboot || echo "/sbin/reboot")
+                crontab -l 2>/dev/null | grep -v "$reboot_cmd_path" | grep -v "/sbin/reboot" | grep -v "reboot" > /tmp/cron_backup
+                crontab /tmp/cron_backup
+                rm -f /tmp/cron_backup
+                LOG_SUCCESS "定时重启任务已成功删除！"
+                sleep 1.5
+                continue
+            elif [[ "$modify_reboot" != "y" && "$modify_reboot" != "Y" ]]; then
+                continue
+            fi
+        else
+            echo -e " 当前设定状态: ${YELLOW}未设置任何自动重启任务${NC}"
+            SUB_DIVIDER
+        fi
+
+        read -r -p "$(echo -e "👉 请输入重启时间的${CYAN}小时${NC} (0-23) [默认: 3]: ")" reboot_hour
         reboot_hour=${reboot_hour:-3}
-        read -r -p "$(echo -e "👉 请输入重启时间的分钟 (0-59) [默认: 0]: ")" reboot_minute
+        read -r -p "$(echo -e "👉 请输入重启时间的${CYAN}分钟${NC} (0-59) [默认: 0]: ")" reboot_minute
         reboot_minute=${reboot_minute:-0}
 
         # 输入合法性强校验
@@ -116,21 +145,17 @@ while true; do
             reboot_minute=0
         fi
 
-        # 写入 Cron 规则，同时剔除旧的重启规则防止冲突
+        # 写入 Cron 规则
         LOG_INFO "正在清理历史重启规则并写入新配置..."
         reboot_cmd_path=$(command -v reboot || echo "/sbin/reboot")
-        
-        # 将原有的计划任务导出（过滤掉之前写入的 reboot 规则）
-        crontab -l 2>/dev/null | grep -v "$reboot_cmd_path" | grep -v "/sbin/reboot" > /tmp/cron_backup
-        # 追加新规则
+        crontab -l 2>/dev/null | grep -v "$reboot_cmd_path" | grep -v "/sbin/reboot" | grep -v "reboot" > /tmp/cron_backup
         echo "$reboot_minute $reboot_hour * * * $reboot_cmd_path" >> /tmp/cron_backup
-        # 应用新计划任务
         crontab /tmp/cron_backup
         rm -f /tmp/cron_backup
 
-        LOG_SUCCESS "配置大功告成！服务器将于每天北京时间 ${BOLD}${reboot_hour}:${reboot_minute}${NC} 准时重启拔线。"
-        DIVIDER
-        read -r -p "按回车键返回主菜单..." 
+        printf -v final_display_time "%02d:%02d" "$reboot_hour" "$reboot_minute"
+        LOG_SUCCESS "大功告成！服务器将于每天北京时间 ${BOLD}${final_display_time}${NC} 自动重启。"
+        sleep 2
 
     elif [[ "$main_choice" == "5" ]]; then
         while true; do
@@ -138,24 +163,22 @@ while true; do
             DIVIDER
             echo -e "${BOLD}        [ 节点 SNI 域名连通性与 TLS 1.3 探测工具 ]        ${NC}"
             DIVIDER
-            echo -e "  ${CYAN}--- 🇯🇵 日本 VPS 优质推荐 ---${NC}"
+            echo -e "  ${CYAN}--- 🇯🇵 亚太/本土优选 ---${NC}"
             echo -e "   1) www.nintendo.co.jp   (任天堂)"
-            echo -e "   2) www.playstation.com  (索尼PS)"
-            echo -e "   3) www.u-tokyo.ac.jp    (东京大学)"
-            echo -e "   4) www.kyoto-u.ac.jp    (京都大学)"
-            echo -e "   5) www.honda.co.jp      (本田)"
-            echo -e "   6) www.toyota.co.jp     (丰田)"
-            echo -e "   7) www.mercari.com      (煤炉)"
-            echo -e "  ${CYAN}--- 🌍 全球通用后备推荐 ---${NC}"
-            echo -e "   8) www.apple.com"
-            echo -e "   9) swdist.apple.com"
-            echo -e "  10) www.microsoft.com"
-            echo -e "  11) update.microsoft.com"
-            echo -e "  12) www.amazon.com"
-            echo -e "  ${CYAN}--- 其他选项 ---${NC}"
-            echo -e "  13) ${YELLOW}手动输入自定义域名${NC}"
-            echo -e "  88) ${RED}[核武器] XTLS官方扫描器 + RealityChecker 深度质检${NC}"
-            echo -e "  99) ${GREEN}一键批量测试并生成深度极客检测报告 (内置推荐库)${NC}"
+            echo -e "   2) www.playstation.com  (索尼)"
+            echo -e "   3) www.u-tokyo.ac.jp    (东大)"
+            echo -e "   4) www.mercari.com      (煤炉)"
+            echo -e "  ${CYAN}--- 🌍 欧美/微软/Apple系万金油 ---${NC}"
+            echo -e "   5) www.apple.com        (苹果)"
+            echo -e "   6) www.microsoft.com    (微软)"
+            echo -e "   7) aws.com              (亚马逊)"
+            echo -e "   8) bing.com             (必应)"
+            echo -e "   9) amd.com              (AMD)"
+            echo -e "  10) snap.licdn.com       (领英静态)"
+            echo -e "  ${CYAN}--- 高级自定义与其他 ---${NC}"
+            echo -e "  11) ⌨️ 手动输入自定义域名"
+            echo -e "  88) 🚀 ${RED}[核武器] XTLS官方扫描器 + RealityChecker 深度质检${NC}"
+            echo -e "  99) ⚡ ${GREEN}[一键极速测试] 批量跑完内置库的 32 款全网高优 SNI${NC}"
             echo -e "   0) 返回主菜单"
             DIVIDER
             
@@ -166,16 +189,14 @@ while true; do
                 1) DOMAIN="www.nintendo.co.jp" ;;
                 2) DOMAIN="www.playstation.com" ;;
                 3) DOMAIN="www.u-tokyo.ac.jp" ;;
-                4) DOMAIN="www.kyoto-u.ac.jp" ;;
-                5) DOMAIN="www.honda.co.jp" ;;
-                6) DOMAIN="www.toyota.co.jp" ;;
-                7) DOMAIN="www.mercari.com" ;;
-                8) DOMAIN="www.apple.com" ;;
-                9) DOMAIN="swdist.apple.com" ;;
-                10) DOMAIN="www.microsoft.com" ;;
-                11) DOMAIN="update.microsoft.com" ;;
-                12) DOMAIN="www.amazon.com" ;;
-                13) 
+                4) DOMAIN="www.mercari.com" ;;
+                5) DOMAIN="www.apple.com" ;;
+                6) DOMAIN="www.microsoft.com" ;;
+                7) DOMAIN="aws.com" ;;
+                8) DOMAIN="bing.com" ;;
+                9) DOMAIN="amd.com" ;;
+                10) DOMAIN="snap.licdn.com" ;;
+                11) 
                     read -r -p "$(echo -e "请输入需要测试的 ${CYAN}SNI 域名${NC}: ")" DOMAIN
                     if [[ -z "$DOMAIN" ]]; then
                         LOG_WARN "未输入域名，已取消。"
@@ -203,7 +224,7 @@ while true; do
 
                         if [ -z "$dl_url" ]; then
                             LOG_ERROR "获取下载链接失败，请检查网络或 GitHub 限制。"
-                            read -r -p "按回车键继续..." 
+                            sleep 2
                             continue
                         fi
 
@@ -227,7 +248,7 @@ while true; do
                         if [ ! -x "./RealiTLScanner" ]; then
                             LOG_ERROR "解析二进制文件失败！"
                             rm -f ./RealiTLScanner scanner_pkg
-                            read -r -p "按回车键继续..." 
+                            sleep 2
                             continue
                         fi
                         LOG_SUCCESS "RealiTLScanner 部署完成！"
@@ -261,7 +282,6 @@ while true; do
                     
                     rm -f out.csv
                     
-                    # 允许用户 Ctrl+C 中断扫描而不退出主脚本
                     trap 'echo -e "\n${YELLOW}[INFO] 用户手动中断了扫描操作，准备整理并质检战利品...${NC}"' SIGINT
                     
                     if [[ "$scan_target" == http* ]]; then
@@ -270,7 +290,6 @@ while true; do
                         ./RealiTLScanner -addr "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
                     fi
                     
-                    # 恢复默认的 SIGINT 行为
                     trap - SIGINT
                     
                     echo -e "\n"
@@ -323,7 +342,7 @@ while true; do
                             fi
                         fi
                     else
-                        LOG_WARN "本次扫描未找到任何符合基本要求的 SNI，可能是目标 IP 封禁或端口错误，请换个目标重试。"
+                        LOG_WARN "本次扫描未找到任何符合要求的 SNI，可能是目标被封禁或不匹配。"
                     fi
                     
                     read -r -p "按回车键返回菜单..."
@@ -333,7 +352,8 @@ while true; do
                     clear
                     echo -e "\n正在执行深度批量检测，分析握手时间、证书与 CDN，请耐心等待...\n"
                     
-                    DOMAIN_LIST="www.nintendo.co.jp www.playstation.com www.u-tokyo.ac.jp www.kyoto-u.ac.jp www.honda.co.jp www.toyota.co.jp www.mercari.com www.apple.com swdist.apple.com www.microsoft.com update.microsoft.com www.amazon.com"
+                    # 已将你提供的去重高优域名全部整合进此库
+                    DOMAIN_LIST="www.nintendo.co.jp www.playstation.com www.u-tokyo.ac.jp www.kyoto-u.ac.jp www.honda.co.jp www.toyota.co.jp www.mercari.com www.apple.com swdist.apple.com www.microsoft.com update.microsoft.com www.amazon.com amd.com apps.mzstatic.com aws.com azure.microsoft.com beacon.gtv-pub.com bing.com catalog.gamepass.com cdn-dynmedia-1.microsoft.com cdn.bizibly.com devblogs.microsoft.com fpinit.itunes.apple.com go.microsoft.com gray-config-prod.api.arc-cdn.net gray.video-player.arcpublishing.com r.bing.com services.digitaleast.mobi snap.licdn.com tag-logger.demandbase.com tag.demandbase.com ts1.tc.mm.bing.net"
                     
                     start_time=$SECONDS
                     total_domains=0
@@ -428,14 +448,18 @@ while true; do
                         fi
                         
                         # ================= 表格 UI 对齐引擎 =================
-                        str_d=$(printf " %-24s " "$d")
+                        domain_sub=$d
+                        if [ ${#domain_sub} -gt 24 ]; then
+                            domain_sub="${domain_sub:0:21}..."
+                        fi
+                        str_d=$(printf " %-24s " "$domain_sub")
                         str_b="   ✓    "
                         
-                        # 握手时间动态填充 (总宽 8)
+                        # 握手时间动态填充
                         len_h=${#hs_time_ms}; pad_h=$((8 - len_h)); pl_h=$((pad_h / 2)); pr_h=$((pad_h - pl_h))
                         str_h=$(printf "%*s%b%*s" "$pl_h" "" "${hs_col}${hs_time_ms}\033[0m" "$pr_h" "")
                         
-                        # 证书天数动态填充 (中文占2宽，总视觉宽 8)
+                        # 证书天数动态填充
                         v_width_c=0
                         if [[ "$cert_days" == *"天" ]]; then v_width_c=$((${#cert_days} + 1)); else v_width_c=${#cert_days}; fi
                         pad_c=$((8 - v_width_c)); pl_c=$((pad_c / 2)); pr_c=$((pad_c - pl_c))
@@ -446,11 +470,11 @@ while true; do
                         
                         str_hot="  - "
                         
-                        # 推荐星级填充 (总宽 6)
+                        # 推荐星级填充
                         len_r=${#rec_val}; pad_r=$((6 - len_r)); pl_r=$((pad_r / 2)); pr_r=$((pad_r - pl_r))
                         str_rec=$(printf "%*s%b%*s" "$pl_r" "" "\033[33m${rec_val}\033[0m" "$pr_r" "")
                         
-                        # 状态码填充 (总宽 8)
+                        # 状态码填充
                         len_s=${#http_code}; pad_s=$((8 - len_s)); pl_s=$((pad_s / 2)); pr_s=$((pad_s - pl_s))
                         str_s=$(printf "%*s%b%*s" "$pl_s" "" "${stat_col}${http_code}\033[0m" "$pr_s" "")
                         
@@ -471,20 +495,13 @@ while true; do
                     echo "总耗时: ${total_time_s}s"
                     echo "检测域名: ${total_domains} 个"
                     echo "成功率: ${success_rate}%"
-                    echo "适合性率: ${success_rate}%"
                     echo ""
-                    
                     if [ "$unsuited_count" -gt 0 ]; then
-                        echo "不适合的域名 (${unsuited_count}个):"
-                        echo "  - ${unsuited_count}个网络不可达或不支持 TLS 1.3"
+                        echo "不适合的域名 (${unsuited_count}个): 网络不可达或不支持 TLS 1.3"
                         echo ""
                     fi
                     
-                    if [ "$unnatural_count" -gt 0 ]; then
-                        echo "状态码不自然的域名 (${unnatural_count}个):"
-                        echo -e "$unnatural_list"
-                    fi
-                    
+                    # 长报告需要确认返回，防止一闪而过
                     read -r -p "按回车键返回主菜单..." 
                     continue
                     ;;
@@ -572,7 +589,7 @@ while true; do
             rm -f ipcheck.sh
         fi
         
-        DIVIDER
+        # 报告类需要停留
         read -r -p "按回车键返回主菜单..." 
 
     elif [[ "$main_choice" == "3" ]]; then
@@ -581,14 +598,13 @@ while true; do
         echo -e "${BOLD}              [ SSL 证书自动申请与续签工具 ]               ${NC}"
         DIVIDER
         
-        # --- SSL 存在检测逻辑 ---
         if [ -d "$HOME/.acme.sh" ] || command -v acme.sh >/dev/null 2>&1; then
             LOG_WARN "检测到系统已安装过 acme.sh 证书环境。"
             read -r -p "是否继续拉取专属脚本并覆盖执行？(y/n) [n]: " override_ssl
             override_ssl=${override_ssl:-n}
             if [[ "$override_ssl" != "y" && "$override_ssl" != "Y" ]]; then
                 LOG_INFO "已取消 SSL 配置任务，保留现有环境。"
-                read -r -p "按回车键返回主菜单..." 
+                sleep 1
                 continue
             fi
         fi
@@ -600,7 +616,7 @@ while true; do
         if grep -q "404: Not Found" ssl_manager.sh || [[ ! -s ssl_manager.sh ]]; then
             LOG_ERROR "获取 SSL 脚本失败！请检查您的 SSL-Renewal 仓库中是否存在 acme.sh 文件。"
             rm -f ssl_manager.sh
-            read -r -p "按回车键返回主菜单..." 
+            sleep 2
             continue
         fi
         
@@ -611,8 +627,7 @@ while true; do
         rm -f ssl_manager.sh
         DIVIDER
         LOG_SUCCESS "SSL 证书任务执行完毕！"
-        DIVIDER
-        read -r -p "按回车键返回主菜单..." 
+        sleep 2
 
     elif [[ "$main_choice" == "2" ]]; then
         while true; do
@@ -633,7 +648,6 @@ while true; do
             case $env_choice in
                 1)
                     SUB_DIVIDER
-                    # --- 主机名检测逻辑 ---
                     current_host=$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null)
                     LOG_INFO "当前系统主机名为: ${CYAN}${current_host}${NC}"
                     read -r -p "$(echo -e "请输入新的${CYAN}主机名 (Hostname)${NC} [直接回车保持原样]: ")" input_hostname
@@ -647,19 +661,18 @@ while true; do
                         fi
                         LOG_SUCCESS "主机名已设置为: ${BOLD}$input_hostname${NC} (重连 SSH 后生效)"
                     else
-                        LOG_INFO "未检测到输入或未发生改变，已跳过主机名修改。"
+                        LOG_INFO "未发生改变，已跳过。"
                     fi
-                    read -r -p "按回车键继续..." 
+                    sleep 1.5
                     ;;
                 2)
                     SUB_DIVIDER
-                    # --- 时区检测逻辑 ---
                     current_time=$(date +"%Y-%m-%d %H:%M:%S %Z")
                     LOG_INFO "当前系统时间与时区: ${CYAN}${current_time}${NC}"
                     read -r -p "$(echo -e "请输入新${CYAN}系统时区${NC} [默认: Asia/Shanghai, 输入 n 跳过]: ")" input_timezone
                     
                     if [[ "$input_timezone" == "n" || "$input_timezone" == "N" ]]; then
-                        LOG_INFO "已取消时区修改，保留现状。"
+                        LOG_INFO "已保留现状。"
                     else
                         TIMEZONE_VAL=${input_timezone:-Asia/Shanghai}
                         if command -v timedatectl >/dev/null 2>&1; then
@@ -669,7 +682,7 @@ while true; do
                         fi
                         LOG_SUCCESS "时区已成功设置为: ${BOLD}$TIMEZONE_VAL${NC}"
                     fi
-                    read -r -p "按回车键继续..." 
+                    sleep 1.5
                     ;;
                 3)
                     SUB_DIVIDER
@@ -701,18 +714,18 @@ while true; do
                             override_swap=${override_swap:-n}
                             
                             if [[ "$override_swap" == "y" || "$override_swap" == "Y" ]]; then
-                                LOG_INFO "正在为您卸载并清理旧的 Swap 配置..."
+                                LOG_INFO "正在卸载旧配置..."
                                 swapoff -a >/dev/null 2>&1
                                 rm -f /swapfile
                                 sed -i '/swap/d' /etc/fstab
                             else
-                                LOG_INFO "已取消重建，保留原有 Swap 配置。"
-                                read -r -p "按回车键继续..." 
+                                LOG_INFO "已取消重建。"
+                                sleep 1
                                 continue
                             fi
                         fi
 
-                        LOG_INFO "正在为您创建 ${SWAP_VAL}MB 的 Swap 文件，请稍候 (视硬盘性能可能需要十几秒)..."
+                        LOG_INFO "正在为您创建 ${SWAP_VAL}MB 的 Swap 文件，请稍候..."
                         dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_VAL" status=none
                         chmod 600 /swapfile
                         mkswap /swapfile >/dev/null 2>&1
@@ -721,10 +734,11 @@ while true; do
                             echo "/swapfile none swap sw 0 0" >> /etc/fstab
                         fi
                         LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并永久挂载成功!"
+                        sleep 2
                     else
-                        LOG_WARN "输入值非法，已取消创建。"
+                        LOG_WARN "输入值非法，已取消。"
+                        sleep 1.5
                     fi
-                    read -r -p "按回车键继续..." 
                     ;;
                 4)
                     while true; do
@@ -771,39 +785,31 @@ while true; do
                         case $bbr_choice in
                             1)
                                 SUB_DIVIDER
-                                # --- 优化：防御重复覆盖，防止盲目清空参数 ---
                                 if [[ "$current_cc" == *"bbr"* ]]; then
-                                    LOG_WARN "检测到系统当前已经开启了 BBR 相关的网络加速。"
-                                    read -r -p "是否强制清空旧参数，重新注入高并发 TCP 优化配置？(y/n) [n]: " override_bbr
+                                    LOG_WARN "系统当前已开启 BBR 网络加速。"
+                                    read -r -p "是否强制重新注入高并发 TCP 优化配置？(y/n) [n]: " override_bbr
                                     override_bbr=${override_bbr:-n}
                                     if [[ "$override_bbr" != "y" && "$override_bbr" != "Y" ]]; then
-                                        LOG_INFO "已取消网络参数重置。"
-                                        read -r -p "按回车键继续..." 
+                                        LOG_INFO "已跳过网络重置。"
+                                        sleep 1
                                         continue
                                     fi
                                 fi
 
-                                LOG_INFO "开始执行智能网络优化流程..."
+                                LOG_INFO "正在执行智能网络优化流程..."
                                 
                                 if [[ "$virt_type" == *"openvz"* || "$virt_type" == *"lxc"* || "$virt_type" == *"OpenVZ"* ]]; then
-                                    LOG_WARN "检测到容器虚拟化 ($virt_type)，无法修改底层内核限制。"
-                                    LOG_INFO "将尝试直接开启原生 BBR (需宿主机支持)..."
-                                else
-                                    LOG_INFO "检测到独立内核环境 ($virt_type)，安全校验通过。"
+                                    LOG_WARN "容器虚拟化 ($virt_type)，将尝试强制开启原生 BBR..."
                                 fi
 
                                 if [[ $(echo "$kernel_version >= 4.9" | bc 2>/dev/null || echo 1) -eq 1 ]]; then
-                                    LOG_INFO "正在配置 TCP BBR 拥塞控制算法..."
                                     sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
                                     sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
                                     echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
                                     echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-                                else
-                                    LOG_WARN "内核版本 ($kernel_version) 较老，无法保证 BBR 原生支持！建议使用菜单 2 升级内核。"
                                 fi
 
-                                LOG_INFO "正在注入高级网络吞吐量优化参数..."
-                                
+                                LOG_INFO "注入高级网络吞吐量优化参数..."
                                 for key in fs.file-max net.ipv4.tcp_tw_reuse net.ipv4.ip_local_port_range net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.core.somaxconn net.ipv4.tcp_max_syn_backlog net.ipv4.tcp_fastopen; do
                                     sed -i "/^${key}/d" /etc/sysctl.conf
                                 done
@@ -826,53 +832,49 @@ root soft nofile 1000000
 root hard nofile 1000000
 EOF
                                 ulimit -n 1000000 2>/dev/null
-                                
                                 sysctl -p >/dev/null 2>&1
-                                current_cc_check=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
                                 
+                                current_cc_check=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
                                 if [[ "$current_cc_check" == *"bbr"* ]]; then
-                                    LOG_SUCCESS "智能优化大功告成！原生 BBR 与高并发参数已生效。"
+                                    LOG_SUCCESS "大功告成！原生 BBR 与高并发参数已生效。"
                                 else
-                                    LOG_WARN "高并发参数已生效，但 BBR 开启失败 (可能受限于宿主机或极老内核)。"
+                                    LOG_WARN "高并发参数已生效，但 BBR 可能受限于宿主机不支持。"
                                 fi
-                                read -r -p "按回车键继续..." 
+                                sleep 2
                                 ;;
                                 
                             2)
                                 SUB_DIVIDER
-                                LOG_WARN "即将调用第三方脚本。请注意：在较新系统或 OpenVZ 上强换内核极易导致系统失联变砖！"
+                                LOG_WARN "警告: 在新系统或 OpenVZ 上强换魔改内核极易导致失联！"
                                 read -r -p "确认要继续吗？(y/n) [n]: " confirm_kernel
                                 if [[ "$confirm_kernel" == "y" || "$confirm_kernel" == "Y" ]]; then
-                                    LOG_INFO "正在拉取核心组件..."
+                                    LOG_INFO "拉取核心组件中..."
                                     wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
                                     if [[ -f tcp_net.sh ]]; then
                                         chmod +x tcp_net.sh
                                         bash tcp_net.sh
                                         rm -f tcp_net.sh
-                                    else
-                                        LOG_ERROR "获取组件失败，请检查网络。"
                                     fi
                                 else
                                     LOG_INFO "已取消操作。"
+                                    sleep 1
                                 fi
-                                read -r -p "按回车键继续..." 
                                 ;;
                                 
                             9)
                                 SUB_DIVIDER
-                                LOG_INFO "正在清理所有加速与自定义 TCP 参数..."
+                                LOG_INFO "清理加速与 TCP 参数..."
                                 sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
                                 sed -i '/fs.file-max/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.tcp_/d' /etc/sysctl.conf
                                 sed -i '/net.core.somaxconn/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.ip_local_port_range/d' /etc/sysctl.conf
-                                
                                 echo "net.core.default_qdisc=pfifo_fast" >> /etc/sysctl.conf
                                 echo "net.ipv4.tcp_congestion_control=cubic" >> /etc/sysctl.conf
                                 sysctl -p >/dev/null 2>&1
-                                LOG_SUCCESS "已完全恢复系统网络默认值。"
-                                read -r -p "按回车键继续..." 
+                                LOG_SUCCESS "已恢复系统默认网络配置。"
+                                sleep 2
                                 ;;
                                 
                             0) break ;;
@@ -890,10 +892,11 @@ EOF
                         else
                             LOG_ERROR "密码修改失败！"
                         fi
+                        sleep 2
                     else
-                        LOG_INFO "检测到空输入，已取消修改密码操作。"
+                        LOG_INFO "已跳过修改操作。"
+                        sleep 1
                     fi
-                    read -r -p "按回车键继续..." 
                     ;;
                 0)
                     LOG_SUCCESS "正在返回主菜单..."
@@ -985,7 +988,7 @@ EOF
             esac
         else
             LOG_ERROR "无效的系统类型选择。"
-            sleep 1
+            sleep 1.5
             continue
         fi
 
@@ -1040,7 +1043,7 @@ EOF
             reboot
         else
             LOG_ERROR "引擎执行失败，请检查网络或配置信息。"
-            read -r -p "按回车键返回主菜单..." 
+            sleep 2
         fi
 
     elif [[ "$main_choice" == "0" ]]; then
