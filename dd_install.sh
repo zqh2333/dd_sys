@@ -61,7 +61,7 @@ while true; do
     echo -e "  ${GREEN}1) [系统] 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
     echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (主机名/时区/Swap/BBR/改密码)"
     echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
-    echo -e "  ${BLUE}4) [测试] 节点流媒体解锁检测${NC} (Netflix/Disney+/YouTube 等)"
+    echo -e "  ${BLUE}4) [测试] IP 质量与解锁综合检测${NC} (IP风险/流媒体/AI/邮局)"
     echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
     
@@ -70,33 +70,33 @@ while true; do
 
     if [[ "$main_choice" == "4" ]]; then
         # --------------------------------------------------
-        # 模块 4: 流媒体解锁检测
+        # 模块 4: IP 质量与流媒体解锁综合检测 (IPQuality)
         # --------------------------------------------------
         clear
         DIVIDER
-        echo -e "${BOLD}              [ 全球流媒体解锁及地域限制检测 ]               ${NC}"
+        echo -e "${BOLD}       [ IP 质量 / 风险评估 / 流媒体与 AI 解锁检测 ]       ${NC}"
         DIVIDER
-        LOG_INFO "正在拉取业界权威的流媒体检测组件 (RegionRestrictionCheck)..."
+        LOG_INFO "正在拉取权威 IP 综合检测组件 (IPQuality)..."
         
-        # 使用官方 raw 地址以确保稳定拉取
-        curl -sSL -o media_check.sh "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh"
+        # 使用 xykt/IPQuality 的官方 Raw 地址，也就是截图里的脚本
+        curl -sSL -o ipcheck.sh "https://raw.githubusercontent.com/xykt/IPQuality/main/ip.sh"
         
-        if [[ -s media_check.sh ]]; then
-            chmod +x media_check.sh
-            LOG_SUCCESS "组件拉取成功，即将为您呈现检测报告！"
+        if [[ -s ipcheck.sh ]]; then
+            chmod +x ipcheck.sh
+            LOG_SUCCESS "组件拉取成功，即将为您呈现多维度综合检测报告！"
             SUB_DIVIDER
             
-            # 执行流媒体检测脚本
-            bash media_check.sh
+            # 执行综合检测脚本
+            bash ipcheck.sh
             
-            # 执行完毕后清理残留文件，保持系统整洁
-            rm -f media_check.sh
+            # 清理残留文件
+            rm -f ipcheck.sh
             
             DIVIDER
-            LOG_SUCCESS "流媒体解锁检测执行完毕！"
+            LOG_SUCCESS "IP 综合检测执行完毕！"
         else
-            LOG_ERROR "获取流媒体检测脚本失败，请检查服务器网络与 GitHub 的连接。"
-            rm -f media_check.sh
+            LOG_ERROR "获取检测脚本失败，请检查服务器网络与 GitHub 的连接。"
+            rm -f ipcheck.sh
         fi
         
         DIVIDER
