@@ -24,8 +24,8 @@ fi
 # 阶段三：主业务逻辑与核心引擎
 # ==========================================
 
-# 拦截全局 Ctrl+C (SIGINT)，防止脚本闪退
-trap 'echo -e "\n${YELLOW}⚠️ 检测到中断指令，操作已取消。${NC}"; sleep 0.5' SIGINT
+# 拦截全局 Ctrl+C (SIGINT)，防止脚本闪退，安全返回上一级
+trap 'echo -e "\n${YELLOW}⚠️ 收到中断指令，正在终止当前操作并安全返回上一级...${NC}"; sleep 0.5' SIGINT
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -49,7 +49,7 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 # ---------------------------------------------------------
-# [核心引擎] 深度质检与增量收藏模块 (严丝合缝对齐版)
+# [核心引擎] 深度质检与增量收藏模块
 # ---------------------------------------------------------
 deep_check_and_save() {
     local test_list="$1"
@@ -68,13 +68,13 @@ deep_check_and_save() {
     echo -e "| 最终域名                 | 基础条件 | 握手时间 | 证书时间 | CDN  | 热门 | 推荐   | 页面状态 |"
     echo -e "+--------------------------+----------+----------+----------+------+------+--------+----------+"
     
-    # 局部 Trap：允许使用 Ctrl+C 直接中断耗时的循环质检，并退回菜单
+    # 局部 Trap：允许使用 Ctrl+C 直接中断耗时的循环质检，并结算当前进度
     USER_ABORT=0
     trap 'USER_ABORT=1' SIGINT
 
     for d in $test_list; do
         if [ "$USER_ABORT" -eq 1 ]; then
-            echo -e "\n${YELLOW}⚠️ 质检被手动中止！${NC}"
+            echo -e "\n${YELLOW}⚠️ 质检已被手动中止！正在结算已完成的数据...${NC}"
             break
         fi
 
@@ -154,7 +154,7 @@ deep_check_and_save() {
             rec_val="***"
         fi
         
-        # ================= UI 格式化引擎 (修复对齐出血) =================
+        # ================= UI 格式化引擎 =================
         domain_sub=$d
         if [ ${#domain_sub} -gt 24 ]; then domain_sub="${domain_sub:0:21}..."; fi
         str_d=$(printf " %-24s " "$domain_sub")
@@ -182,14 +182,13 @@ deep_check_and_save() {
         echo -e "|${str_d}|${str_b}|${str_h}|${str_c}|${str_cdn}|${str_hot}|${str_rec}|${str_s}|"
         echo -e "+--------------------------+----------+----------+----------+------+------+--------+----------+"
         
-        # 极品归档提取
         if [[ "$rec_val" == "*****" || "$rec_val" == "****" ]]; then
             echo "$d" >> /tmp/good_snis.txt
         fi
     done
     
-    # 恢复全局 Trap
-    trap 'echo -e "\n${YELLOW}⚠️ 操作被中断，正在返回菜单...${NC}"; sleep 0.5' SIGINT
+    # 恢复全局拦截
+    trap 'echo -e "\n${YELLOW}⚠️ 收到中断指令，正在终止当前操作并安全返回上一级...${NC}"; sleep 0.5' SIGINT
 
     end_time=$SECONDS
     total_time_s=$((end_time - start_time))
@@ -209,11 +208,11 @@ deep_check_and_save() {
         echo -e "\n${YELLOW}⚠️ 本次检测未找到值得入库的高优免死金牌 SNI。${NC}"
     fi
     
-    read -r -p "按回车键返回菜单..." || true
+    read -r -p "按回车键返回上一级..." || { echo; return; }
 }
 
 
-LOG_SUCCESS "初始化完成，交互系统已极致去繁就简。"
+LOG_SUCCESS "初始化完成，防退出系统已生效。"
 sleep 0.5
 
 while true; do
@@ -230,7 +229,6 @@ while true; do
     echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
     
-    # || { echo; continue; } 防止 Ctrl+C 把整个脚本杀掉
     read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-6]: ${NC}")" main_choice || { echo; continue; }
     main_choice=${main_choice:-1}
 
@@ -262,7 +260,7 @@ while true; do
             printf -v display_time "%02d:%02d" "$curr_hr" "$curr_min"
             echo -e " 状态: ${GREEN}每天 ${BOLD}${display_time}${NC}${GREEN} (北京时间) 自动重启${NC}"
             SUB_DIVIDER
-            read -r -p "$(echo -e "👉 操作: [${GREEN}直接回车${NC}]修改时间 | [${RED}d${NC}]删除任务 | [${YELLOW}n${NC}]返回菜单 : ")" modify_reboot || { echo; continue; }
+            read -r -p "$(echo -e "👉 操作: [${GREEN}直接回车${NC}]修改时间 | [${RED}d${NC}]删除任务 | [${YELLOW}n${NC}]返回上一级 : ")" modify_reboot || { echo; continue; }
             
             if [[ "$modify_reboot" == "d" || "$modify_reboot" == "D" ]]; then
                 reboot_cmd_path=$(command -v reboot || echo "/sbin/reboot")
@@ -294,6 +292,7 @@ while true; do
         sleep 2
 
     elif [[ "$main_choice" == "5" ]]; then
+        # 这是 Option 5 的专属内层循环（子菜单）
         while true; do
             clear
             DIVIDER
@@ -350,21 +349,21 @@ while true; do
                     clear
                     DIVIDER
                     LOG_INFO "引擎轰鸣中... 目标: ${scan_target} | 线程: ${scan_threads}"
-                    LOG_WARN "扫描会持续输出，若感觉成果足够，请按 ${RED}Ctrl+C${NC} 停止，脚本将【自动无缝接管】并开始质检！"
+                    LOG_WARN "扫描会持续输出，若感觉成果足够，请按 ${RED}Ctrl+C${NC} 停止，脚本将【自动无缝接管】并切入质检！"
                     DIVIDER
                     sleep 1
                     
                     rm -f out.csv
-                    # 关键修改：临时拦截 Ctrl+C 并赋予其“跳到下一步”的使命
-                    trap 'echo -e "\n${YELLOW}[INFO] 盲扫已手动中断，正在接管并切入质检归档流程...${NC}"' SIGINT
+                    # 临时修改拦截规则：遇到 Ctrl+C 不退回，而是流转到下一步
+                    trap 'echo -e "\n${YELLOW}[INFO] 盲扫已手动中断！正在无缝切入后续的质检归档流程...${NC}"' SIGINT
                     if [[ "$scan_target" == http* ]]; then ./RealiTLScanner -url "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
                     else ./RealiTLScanner -addr "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv; fi
                     
-                    # 恢复全局的 Ctrl+C 防闪退行为
-                    trap 'echo -e "\n${YELLOW}⚠️ 操作被中断，正在返回菜单...${NC}"; sleep 0.5' SIGINT
+                    # 恢复全局的 Ctrl+C 安全返回行为
+                    trap 'echo -e "\n${YELLOW}⚠️ 收到中断指令，正在终止当前操作并安全返回上一级...${NC}"; sleep 0.5' SIGINT
                     
                     if [ -s "out.csv" ]; then
-                        LOG_SUCCESS "初扫结束，正在提取有效名单..."
+                        LOG_SUCCESS "初扫结束，正在提取有效名单进入质检引擎..."
                         scan_domains=$(awk -F, 'NR>1 {gsub(/"/, "", $3); print $3}' out.csv | sort -u)
                         if [ -n "$scan_domains" ]; then
                             deep_check_and_save "$scan_domains"
@@ -378,7 +377,6 @@ while true; do
                     fi
                     ;;
                 3)
-                    # 初始化核心高优收藏库
                     if [ ! -s "sni_collection.txt" ]; then
                         LOG_INFO "本地收藏库为空，正在自动注入由您筛选的 32 款全网极品免死金牌 SNI..."
                         echo "www.nintendo.co.jp www.playstation.com www.u-tokyo.ac.jp www.kyoto-u.ac.jp www.honda.co.jp www.toyota.co.jp www.mercari.com www.apple.com swdist.apple.com www.microsoft.com update.microsoft.com www.amazon.com amd.com apps.mzstatic.com aws.com azure.microsoft.com beacon.gtv-pub.com bing.com catalog.gamepass.com cdn-dynmedia-1.microsoft.com cdn.bizibly.com devblogs.microsoft.com fpinit.itunes.apple.com go.microsoft.com gray-config-prod.api.arc-cdn.net gray.video-player.arcpublishing.com r.bing.com services.digitaleast.mobi snap.licdn.com tag-logger.demandbase.com tag.demandbase.com ts1.tc.mm.bing.net" | tr ' ' '\n' > sni_collection.txt
@@ -386,7 +384,7 @@ while true; do
                     local_list=$(cat sni_collection.txt)
                     deep_check_and_save "$local_list"
                     ;;
-                0) break ;;
+                0) break ;; # 按 0 退出当前子菜单，回到主菜单
                 *) LOG_ERROR "输入有误" ; sleep 1 ;;
             esac
         done
@@ -408,7 +406,7 @@ while true; do
             LOG_ERROR "获取检测脚本失败，请检查网络。"
             rm -f ipcheck.sh
         fi
-        read -r -p "按回车键返回主菜单..." || true
+        read -r -p "按回车键返回主菜单..." || { echo; continue; }
 
     elif [[ "$main_choice" == "3" ]]; then
         clear
@@ -436,6 +434,7 @@ while true; do
         sleep 2
 
     elif [[ "$main_choice" == "2" ]]; then
+        # 这是 Option 2 的专属内层循环（子菜单）
         while true; do
             clear
             DIVIDER
@@ -503,6 +502,7 @@ while true; do
                     fi
                     ;;
                 4)
+                    # 这是 BBR 的专属内层循环（孙菜单）
                     while true; do
                         clear
                         DIVIDER
@@ -585,7 +585,7 @@ EOF
                                 LOG_SUCCESS "已恢复默认。"
                                 sleep 1.5
                                 ;;
-                            0) break ;;
+                            0) break ;; # 按 0 退出孙菜单，退回到子菜单(环境面板)
                             *) LOG_ERROR "有误" ; sleep 1 ;;
                         esac
                     done
@@ -599,7 +599,7 @@ EOF
                     fi
                     sleep 1.5
                     ;;
-                0) break ;;
+                0) break ;; # 按 0 退出当前子菜单，回到主菜单
                 *) sleep 1 ;;
             esac
         done
