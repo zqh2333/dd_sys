@@ -56,13 +56,78 @@ while true; do
     echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (主机名/时区/Swap/BBR/改密码)"
     echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
     echo -e "  ${BLUE}4) [测试] IP 质量与解锁综合检测${NC} (IP风险/流媒体/AI/邮局)"
+    echo -e "  ${CYAN}5) [节点] 优质 SNI 连通性测试${NC} (VLESS-Reality必备)"
     echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
     
-    read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-4]: ${NC}")" main_choice
+    read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-5]: ${NC}")" main_choice
     main_choice=${main_choice:-1}
 
-    if [[ "$main_choice" == "4" ]]; then
+    if [[ "$main_choice" == "5" ]]; then
+        clear
+        DIVIDER
+        echo -e "${BOLD}        [ 节点 SNI 域名连通性与 TLS 1.3 探测工具 ]        ${NC}"
+        DIVIDER
+        read -r -p "$(echo -e "请输入需要测试的 ${CYAN}SNI 域名${NC} (例如: www.nintendo.co.jp): ")" input_domain
+        
+        if [[ -z "$input_domain" ]]; then
+            LOG_WARN "未输入域名，已取消测试。"
+            read -r -p "按回车键返回主菜单..." 
+            continue
+        fi
+
+        DOMAIN="$input_domain"
+        LOG_INFO "正在测试 SNI 域名: ${BOLD}$DOMAIN${NC}"
+        SUB_DIVIDER
+
+        echo -e "\n${CYAN}[1/3] 解析域名 IP 地址${NC}"
+        if ping -c 1 -W 2 "$DOMAIN" > /dev/null 2>&1; then
+            LOG_SUCCESS "域名解析正常"
+        else
+            LOG_ERROR "无法解析域名 $DOMAIN，请检查域名是否正确或尝试其他域名。"
+            read -r -p "按回车键返回主菜单..." 
+            continue
+        fi
+
+        echo -e "\n${CYAN}[2/3] 测试 TLS 1.3 和 HTTP/2 支持情况${NC}"
+        CURL_OUTPUT=$(curl -I -v -s -o /dev/null --http2 --tlsv1.3 --connect-timeout 5 https://"$DOMAIN" 2>&1)
+
+        if echo "$CURL_OUTPUT" | grep -qi "ALPN, offering h2"; then
+             if echo "$CURL_OUTPUT" | grep -qi "ALPN, server accepted to use h2"; then
+                 LOG_SUCCESS "支持 HTTP/2 (h2)"
+             else
+                 LOG_WARN "未检测到服务端接受 HTTP/2 (h2)，部分环境可能影响伪装效果"
+             fi
+        else
+             LOG_WARN "本机 curl 未尝试或不支持 HTTP/2，请确保 curl 版本较新"
+        fi
+
+        if echo "$CURL_OUTPUT" | grep -qi "TLSv1.3"; then
+            LOG_SUCCESS "支持 TLS 1.3"
+        else
+            LOG_ERROR "目标网站不支持 TLS 1.3，绝对不能用于 VLESS-Reality！"
+            read -r -p "按回车键返回主菜单..." 
+            continue
+        fi
+
+        echo -e "\n${CYAN}[3/3] 测试从当前 VPS 访问该域名的延迟与连通性${NC}"
+        HTTP_CODE=$(curl -I -s -o /dev/null -w "%{http_code}" --connect-timeout 5 https://"$DOMAIN")
+
+        if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "301" || "$HTTP_CODE" == "302" ]]; then
+            LOG_SUCCESS "连通性极佳，HTTP 状态码: $HTTP_CODE"
+            TIME_TOTAL=$(curl -o /dev/null -s -w "%{time_total}\n" https://"$DOMAIN")
+            echo -e " ${GREEN}⏱️ 握手总耗时: ${TIME_TOTAL} 秒${NC}"
+            DIVIDER
+            LOG_SUCCESS "结论: 测试完成！如果以上全部为绿色，则该域名非常适合作为您的 Reality SNI！"
+        else
+            LOG_ERROR "连通性不佳或被拦截，HTTP 状态码: $HTTP_CODE"
+            LOG_WARN "强烈建议换一个域名！"
+            DIVIDER
+        fi
+
+        read -r -p "按回车键返回主菜单..." 
+
+    elif [[ "$main_choice" == "4" ]]; then
         clear
         DIVIDER
         echo -e "${BOLD}       [ IP 质量 / 风险评估 / 流媒体与 AI 解锁检测 ]       ${NC}"
@@ -421,7 +486,7 @@ EOF
     elif [[ "$main_choice" == "1" ]]; then
         clear
         DIVIDER
-        echo -e "${BOLD}        [ 全平台/全网络/全自动 DD 重装脚本 (底层引擎) ]      ${NC}"
+        echo -e "${BOLD}        [ 全平台/全网络/全自动 DD 重装脚本 (底层引擎) ]       ${NC}"
         DIVIDER
 
         LOG_INFO "正在探测当前网络拓扑结构..."
@@ -560,7 +625,7 @@ EOF
         LOG_SUCCESS "已退出全平台配置工具，祝您使用愉快！"
         exit 0
     else
-        LOG_ERROR "无效的选项，请输入 0-4 之间的数字。"
+        LOG_ERROR "无效的选项，请输入 0-5 之间的数字。"
         sleep 1
     fi
 done
