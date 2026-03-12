@@ -16,7 +16,6 @@ fi
 # ==========================================
 # 阶段二：核心魔法 - 解释器升维
 # ==========================================
-# 检测当前是不是 Bash。如果不是（比如刚才是用 sh 启动的），就让 bash 接管并重新运行当前脚本
 if [ -z "$BASH_VERSION" ]; then
     exec bash "$0" "$@"
 fi
@@ -25,14 +24,13 @@ fi
 # 阶段三：主业务逻辑 (完全运行于 Bash 环境)
 # ==========================================
 
-# --- 全局终端色彩及日志输出美化函数 ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # 恢复默认颜色
+NC='\033[0m'
 
 LOG_INFO() { echo -e "${CYAN}[INFO]${NC} $1"; }
 LOG_SUCCESS() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
@@ -41,7 +39,6 @@ LOG_ERROR() { echo -e "${RED}[ERROR]${NC} $1"; }
 DIVIDER() { echo -e "${BLUE}=========================================================${NC}"; }
 SUB_DIVIDER() { echo -e "${CYAN}---------------------------------------------------------${NC}"; }
 
-# --- 权限检查 ---
 if [ "$(id -u)" != "0" ]; then
     LOG_ERROR "权限不足！请使用 root 用户运行此脚本。"
     exit 1
@@ -50,9 +47,6 @@ fi
 LOG_SUCCESS "系统环境就绪，校验完毕。"
 sleep 1
 
-# ==========================================
-# 主菜单循环框架
-# ==========================================
 while true; do
     clear
     DIVIDER
@@ -69,29 +63,20 @@ while true; do
     main_choice=${main_choice:-1}
 
     if [[ "$main_choice" == "4" ]]; then
-        # --------------------------------------------------
-        # 模块 4: IP 质量与流媒体解锁综合检测 (IPQuality)
-        # --------------------------------------------------
         clear
         DIVIDER
         echo -e "${BOLD}       [ IP 质量 / 风险评估 / 流媒体与 AI 解锁检测 ]       ${NC}"
         DIVIDER
         LOG_INFO "正在拉取权威 IP 综合检测组件 (IPQuality)..."
         
-        # 使用 xykt/IPQuality 的官方 Raw 地址，也就是截图里的脚本
         curl -sSL -o ipcheck.sh "https://raw.githubusercontent.com/xykt/IPQuality/main/ip.sh"
         
         if [[ -s ipcheck.sh ]]; then
             chmod +x ipcheck.sh
             LOG_SUCCESS "组件拉取成功，即将为您呈现多维度综合检测报告！"
             SUB_DIVIDER
-            
-            # 执行综合检测脚本
             bash ipcheck.sh
-            
-            # 清理残留文件
             rm -f ipcheck.sh
-            
             DIVIDER
             LOG_SUCCESS "IP 综合检测执行完毕！"
         else
@@ -103,15 +88,24 @@ while true; do
         read -r -p "按回车键返回主菜单..." 
 
     elif [[ "$main_choice" == "3" ]]; then
-        # --------------------------------------------------
-        # 模块 3: SSL 证书申请
-        # --------------------------------------------------
         clear
         DIVIDER
         echo -e "${BOLD}              [ SSL 证书自动申请与续签工具 ]               ${NC}"
         DIVIDER
-        LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
         
+        # --- SSL 存在检测逻辑 ---
+        if [ -d "$HOME/.acme.sh" ] || command -v acme.sh >/dev/null 2>&1; then
+            LOG_WARN "检测到系统已安装过 acme.sh 证书环境。"
+            read -r -p "是否继续拉取专属脚本并覆盖执行？(y/n) [n]: " override_ssl
+            override_ssl=${override_ssl:-n}
+            if [[ "$override_ssl" != "y" && "$override_ssl" != "Y" ]]; then
+                LOG_INFO "已取消 SSL 配置任务，保留现有环境。"
+                read -r -p "按回车键返回主菜单..." 
+                continue
+            fi
+        fi
+
+        LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
         SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/acme.sh"
         curl -sSL -o ssl_manager.sh "$SSL_URL"
         
@@ -125,19 +119,14 @@ while true; do
         chmod +x ssl_manager.sh
         LOG_SUCCESS "SSL 脚本拉取成功，正在为您移交控制权..."
         SUB_DIVIDER
-        
         bash ssl_manager.sh
         rm -f ssl_manager.sh
-        
         DIVIDER
         LOG_SUCCESS "SSL 证书任务执行完毕！"
         DIVIDER
         read -r -p "按回车键返回主菜单..." 
 
     elif [[ "$main_choice" == "2" ]]; then
-        # --------------------------------------------------
-        # 模块 2: 系统环境独立配置面板
-        # --------------------------------------------------
         while true; do
             clear
             DIVIDER
@@ -156,32 +145,46 @@ while true; do
             case $env_choice in
                 1)
                     SUB_DIVIDER
-                    read -r -p "$(echo -e "请输入新的${CYAN}主机名 (Hostname)${NC} [vps]: ")" input_hostname
-                    HOSTNAME_VAL=${input_hostname:-vps}
-                    if command -v hostnamectl >/dev/null 2>&1; then
-                        hostnamectl set-hostname "$HOSTNAME_VAL"
+                    # --- 主机名检测逻辑 ---
+                    current_host=$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null)
+                    LOG_INFO "当前系统主机名为: ${CYAN}${current_host}${NC}"
+                    read -r -p "$(echo -e "请输入新的${CYAN}主机名 (Hostname)${NC} [直接回车保持原样]: ")" input_hostname
+                    
+                    if [[ -n "$input_hostname" && "$input_hostname" != "$current_host" ]]; then
+                        if command -v hostnamectl >/dev/null 2>&1; then
+                            hostnamectl set-hostname "$input_hostname"
+                        else
+                            echo "$input_hostname" > /etc/hostname
+                            hostname "$input_hostname"
+                        fi
+                        LOG_SUCCESS "主机名已设置为: ${BOLD}$input_hostname${NC} (重连 SSH 后生效)"
                     else
-                        echo "$HOSTNAME_VAL" > /etc/hostname
-                        hostname "$HOSTNAME_VAL"
+                        LOG_INFO "未检测到输入或未发生改变，已跳过主机名修改。"
                     fi
-                    LOG_SUCCESS "主机名已设置为: ${BOLD}$HOSTNAME_VAL${NC} (重连 SSH 后生效)"
                     read -r -p "按回车键继续..." 
                     ;;
                 2)
                     SUB_DIVIDER
-                    read -r -p "$(echo -e "请输入${CYAN}系统时区${NC} [Asia/Shanghai]: ")" input_timezone
-                    TIMEZONE_VAL=${input_timezone:-Asia/Shanghai}
-                    if command -v timedatectl >/dev/null 2>&1; then
-                        timedatectl set-timezone "$TIMEZONE_VAL"
+                    # --- 时区检测逻辑 ---
+                    current_time=$(date +"%Y-%m-%d %H:%M:%S %Z")
+                    LOG_INFO "当前系统时间与时区: ${CYAN}${current_time}${NC}"
+                    read -r -p "$(echo -e "请输入新${CYAN}系统时区${NC} [默认: Asia/Shanghai, 输入 n 跳过]: ")" input_timezone
+                    
+                    if [[ "$input_timezone" == "n" || "$input_timezone" == "N" ]]; then
+                        LOG_INFO "已取消时区修改，保留现状。"
                     else
-                        ln -sf /usr/share/zoneinfo/"$TIMEZONE_VAL" /etc/localtime
+                        TIMEZONE_VAL=${input_timezone:-Asia/Shanghai}
+                        if command -v timedatectl >/dev/null 2>&1; then
+                            timedatectl set-timezone "$TIMEZONE_VAL"
+                        else
+                            ln -sf /usr/share/zoneinfo/"$TIMEZONE_VAL" /etc/localtime
+                        fi
+                        LOG_SUCCESS "时区已成功设置为: ${BOLD}$TIMEZONE_VAL${NC}"
                     fi
-                    LOG_SUCCESS "时区已设置为: ${BOLD}$TIMEZONE_VAL${NC}"
                     read -r -p "按回车键继续..." 
                     ;;
                 3)
                     SUB_DIVIDER
-                    # --- 智能检测与计算推荐 Swap 大小 ---
                     phy_ram=$(free -m | awk '/^Mem:/{print $2}')
                     
                     if [ -z "$phy_ram" ] || ! [[ "$phy_ram" =~ ^[0-9]+$ ]]; then
@@ -200,23 +203,36 @@ while true; do
                     SUB_DIVIDER
                     
                     read -r -p "$(echo -e "请输入需要添加的${CYAN}Swap 大小(MB)${NC} [默认: ${GREEN}${rec_swap}${NC}]: ")" input_swap
-                    
                     SWAP_VAL=${input_swap:-$rec_swap}
                     
                     if [[ "$SWAP_VAL" -gt 0 ]] && [[ "$SWAP_VAL" =~ ^[0-9]+$ ]]; then
-                        if swapon --show | grep -q "/swapfile"; then
-                            LOG_WARN "检测到系统已存在 Swap 挂载，跳过创建以防冲突。"
-                        else
-                            LOG_INFO "正在为您创建 ${SWAP_VAL}MB 的 Swap 文件，请稍候 (视硬盘性能可能需要十几秒)..."
-                            dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_VAL" status=none
-                            chmod 600 /swapfile
-                            mkswap /swapfile >/dev/null 2>&1
-                            swapon /swapfile
-                            if ! grep -q "/swapfile" /etc/fstab; then
-                                echo "/swapfile none swap sw 0 0" >> /etc/fstab
+                        current_swap=$(free -m | awk '/^Swap:/{print $2}')
+                        if [[ "$current_swap" -gt 0 ]]; then
+                            LOG_WARN "系统当前已存在 ${current_swap} MB 的 Swap 挂载。"
+                            read -r -p "是否要卸载原有 Swap 并强行按照新配置重建？(y/n) [n]: " override_swap
+                            override_swap=${override_swap:-n}
+                            
+                            if [[ "$override_swap" == "y" || "$override_swap" == "Y" ]]; then
+                                LOG_INFO "正在为您卸载并清理旧的 Swap 配置..."
+                                swapoff -a >/dev/null 2>&1
+                                rm -f /swapfile
+                                sed -i '/swap/d' /etc/fstab
+                            else
+                                LOG_INFO "已取消重建，保留原有 Swap 配置。"
+                                read -r -p "按回车键继续..." 
+                                continue
                             fi
-                            LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并永久挂载成功!"
                         fi
+
+                        LOG_INFO "正在为您创建 ${SWAP_VAL}MB 的 Swap 文件，请稍候 (视硬盘性能可能需要十几秒)..."
+                        dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_VAL" status=none
+                        chmod 600 /swapfile
+                        mkswap /swapfile >/dev/null 2>&1
+                        swapon /swapfile
+                        if ! grep -q "/swapfile" /etc/fstab; then
+                            echo "/swapfile none swap sw 0 0" >> /etc/fstab
+                        fi
+                        LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并永久挂载成功!"
                     else
                         LOG_WARN "输入值非法，已取消创建。"
                     fi
@@ -267,6 +283,18 @@ while true; do
                         case $bbr_choice in
                             1)
                                 SUB_DIVIDER
+                                # --- 优化：防御重复覆盖，防止盲目清空参数 ---
+                                if [[ "$current_cc" == *"bbr"* ]]; then
+                                    LOG_WARN "检测到系统当前已经开启了 BBR 相关的网络加速。"
+                                    read -r -p "是否强制清空旧参数，重新注入高并发 TCP 优化配置？(y/n) [n]: " override_bbr
+                                    override_bbr=${override_bbr:-n}
+                                    if [[ "$override_bbr" != "y" && "$override_bbr" != "Y" ]]; then
+                                        LOG_INFO "已取消网络参数重置。"
+                                        read -r -p "按回车键继续..." 
+                                        continue
+                                    fi
+                                fi
+
                                 LOG_INFO "开始执行智能网络优化流程..."
                                 
                                 if [[ "$virt_type" == *"openvz"* || "$virt_type" == *"lxc"* || "$virt_type" == *"OpenVZ"* ]]; then
@@ -312,9 +340,9 @@ EOF
                                 ulimit -n 1000000 2>/dev/null
                                 
                                 sysctl -p >/dev/null 2>&1
-                                current_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+                                current_cc_check=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
                                 
-                                if [[ "$current_cc" == *"bbr"* ]]; then
+                                if [[ "$current_cc_check" == *"bbr"* ]]; then
                                     LOG_SUCCESS "智能优化大功告成！原生 BBR 与高并发参数已生效。"
                                 else
                                     LOG_WARN "高并发参数已生效，但 BBR 开启失败 (可能受限于宿主机或极老内核)。"
@@ -375,7 +403,7 @@ EOF
                             LOG_ERROR "密码修改失败！"
                         fi
                     else
-                        LOG_WARN "已取消修改密码操作。"
+                        LOG_INFO "检测到空输入，已取消修改密码操作。"
                     fi
                     read -r -p "按回车键继续..." 
                     ;;
@@ -391,9 +419,6 @@ EOF
         done
 
     elif [[ "$main_choice" == "1" ]]; then
-        # --------------------------------------------------
-        # 模块 1: DD 重装系统引擎
-        # --------------------------------------------------
         clear
         DIVIDER
         echo -e "${BOLD}        [ 全平台/全网络/全自动 DD 重装脚本 (底层引擎) ]      ${NC}"
@@ -531,9 +556,6 @@ EOF
         fi
 
     elif [[ "$main_choice" == "0" ]]; then
-        # --------------------------------------------------
-        # 退出模块
-        # --------------------------------------------------
         clear
         LOG_SUCCESS "已退出全平台配置工具，祝您使用愉快！"
         exit 0
