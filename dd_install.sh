@@ -57,13 +57,82 @@ while true; do
     echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
     echo -e "  ${BLUE}4) [测试] IP 质量与解锁综合检测${NC} (IP风险/流媒体/AI/邮局)"
     echo -e "  ${CYAN}5) [节点] 优质 SNI 连通性测试与全局探测${NC} (VLESS-Reality必备)"
+    echo -e "  ${GREEN}6) [维护] 每日定时重启与时区校准${NC} (防假死/清理内存碎片)"
     echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
     
-    read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-5]: ${NC}")" main_choice
+    read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-6]: ${NC}")" main_choice
     main_choice=${main_choice:-1}
 
-    if [[ "$main_choice" == "5" ]]; then
+    if [[ "$main_choice" == "6" ]]; then
+        clear
+        DIVIDER
+        echo -e "${BOLD}       [ 每日定时重启与时区强制校准 (清理内存/防假死) ]       ${NC}"
+        DIVIDER
+        
+        LOG_INFO "1. 正在强制锁定服务器系统时区为 Asia/Shanghai (北京时间)..."
+        if command -v timedatectl >/dev/null 2>&1; then
+            timedatectl set-timezone Asia/Shanghai
+        else
+            ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+        fi
+        current_time=$(date +"%Y-%m-%d %H:%M:%S %Z")
+        LOG_SUCCESS "时区校准完成！当前系统时间: ${CYAN}${current_time}${NC}"
+        
+        SUB_DIVIDER
+        LOG_INFO "2. 正在检测系统定时任务组件 (Cron)..."
+        if ! command -v crontab >/dev/null 2>&1 || ! pgrep -x "cron" >/dev/null 2>&1 && ! pgrep -x "crond" >/dev/null 2>&1; then
+            LOG_WARN "未检测到运行中的 Cron 组件，正在为您自动拉取并配置依赖..."
+            if [ -f /etc/alpine-release ]; then
+                apk update >/dev/null 2>&1 && apk add --no-cache busybox-suid dcron >/dev/null 2>&1
+                rc-update add crond default >/dev/null 2>&1
+                rc-service crond start >/dev/null 2>&1
+            elif [ -f /etc/debian_version ]; then
+                apt-get update -y >/dev/null 2>&1 && apt-get install -y cron >/dev/null 2>&1
+                systemctl enable cron >/dev/null 2>&1
+                systemctl start cron >/dev/null 2>&1
+            elif [ -f /etc/redhat-release ]; then
+                yum install -y cronie >/dev/null 2>&1
+                systemctl enable crond >/dev/null 2>&1
+                systemctl start crond >/dev/null 2>&1
+            fi
+            LOG_SUCCESS "Cron 组件补齐并启动成功！"
+        else
+            LOG_SUCCESS "Cron 定时服务已存在且运行正常。"
+        fi
+
+        SUB_DIVIDER
+        LOG_INFO "3. 配置每日定时准时释放 (重启) 时间"
+        read -r -p "$(echo -e "👉 请输入重启时间的小时 (0-23) [默认: 3]: ")" reboot_hour
+        reboot_hour=${reboot_hour:-3}
+        read -r -p "$(echo -e "👉 请输入重启时间的分钟 (0-59) [默认: 0]: ")" reboot_minute
+        reboot_minute=${reboot_minute:-0}
+
+        # 输入合法性强校验
+        if ! [[ "$reboot_hour" =~ ^[0-9]+$ ]] || [ "$reboot_hour" -lt 0 ] || [ "$reboot_hour" -gt 23 ]; then
+            reboot_hour=3
+        fi
+        if ! [[ "$reboot_minute" =~ ^[0-9]+$ ]] || [ "$reboot_minute" -lt 0 ] || [ "$reboot_minute" -gt 59 ]; then
+            reboot_minute=0
+        fi
+
+        # 写入 Cron 规则，同时剔除旧的重启规则防止冲突
+        LOG_INFO "正在清理历史重启规则并写入新配置..."
+        reboot_cmd_path=$(command -v reboot || echo "/sbin/reboot")
+        
+        # 将原有的计划任务导出（过滤掉之前写入的 reboot 规则）
+        crontab -l 2>/dev/null | grep -v "$reboot_cmd_path" | grep -v "/sbin/reboot" > /tmp/cron_backup
+        # 追加新规则
+        echo "$reboot_minute $reboot_hour * * * $reboot_cmd_path" >> /tmp/cron_backup
+        # 应用新计划任务
+        crontab /tmp/cron_backup
+        rm -f /tmp/cron_backup
+
+        LOG_SUCCESS "配置大功告成！服务器将于每天北京时间 ${BOLD}${reboot_hour}:${reboot_minute}${NC} 准时重启拔线。"
+        DIVIDER
+        read -r -p "按回车键返回主菜单..." 
+
+    elif [[ "$main_choice" == "5" ]]; then
         while true; do
             clear
             DIVIDER
@@ -979,7 +1048,7 @@ EOF
         LOG_SUCCESS "已退出全平台配置工具，祝您使用愉快！"
         exit 0
     else
-        LOG_ERROR "无效的选项，请输入 0-5 之间的数字。"
+        LOG_ERROR "无效的选项，请输入 0-6 之间的数字。"
         sleep 1
     fi
 done
