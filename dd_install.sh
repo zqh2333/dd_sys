@@ -2,14 +2,14 @@
 # ==========================================
 # 阶段一：跨平台基础环境自举 (纯 sh 语法，无脑兼容各大纯净系统)
 # ==========================================
-if ! command -v bash >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v wget >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1 || ! command -v bc >/dev/null 2>&1; then
-    echo "[INFO] 检测到基础环境不全，正在自动安装必要组件 (bash, curl, wget, awk, bc)..."
+if ! command -v bash >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v wget >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1 || ! command -v bc >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+    echo "[INFO] 检测到基础环境不全，正在自动安装必要组件 (bash, curl, wget, awk, bc, openssl, unzip)..."
     if [ -f /etc/alpine-release ]; then
-        apk update >/dev/null 2>&1 && apk add --no-cache bash curl wget socat iproute2 gawk bc >/dev/null 2>&1
+        apk update >/dev/null 2>&1 && apk add --no-cache bash curl wget socat iproute2 gawk bc openssl unzip >/dev/null 2>&1
     elif [ -f /etc/debian_version ]; then
-        apt-get update -y >/dev/null 2>&1 && apt-get install -y bash curl wget socat iproute2 gawk bc >/dev/null 2>&1
+        apt-get update -y >/dev/null 2>&1 && apt-get install -y bash curl wget socat iproute2 gawk bc openssl unzip >/dev/null 2>&1
     elif [ -f /etc/redhat-release ]; then
-        yum clean all >/dev/null 2>&1 && yum install -y bash curl wget socat iproute gawk bc >/dev/null 2>&1
+        yum clean all >/dev/null 2>&1 && yum install -y bash curl wget socat iproute gawk bc openssl unzip >/dev/null 2>&1
     fi
 fi
 
@@ -56,7 +56,7 @@ while true; do
     echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (主机名/时区/Swap/BBR/改密码)"
     echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
     echo -e "  ${BLUE}4) [测试] IP 质量与解锁综合检测${NC} (IP风险/流媒体/AI/邮局)"
-    echo -e "  ${CYAN}5) [节点] 优质 SNI 连通性测试${NC} (VLESS-Reality必备)"
+    echo -e "  ${CYAN}5) [节点] 优质 SNI 连通性测试与全局探测${NC} (VLESS-Reality必备)"
     echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
     
@@ -64,68 +64,399 @@ while true; do
     main_choice=${main_choice:-1}
 
     if [[ "$main_choice" == "5" ]]; then
-        clear
-        DIVIDER
-        echo -e "${BOLD}        [ 节点 SNI 域名连通性与 TLS 1.3 探测工具 ]        ${NC}"
-        DIVIDER
-        read -r -p "$(echo -e "请输入需要测试的 ${CYAN}SNI 域名${NC} (例如: www.nintendo.co.jp): ")" input_domain
-        
-        if [[ -z "$input_domain" ]]; then
-            LOG_WARN "未输入域名，已取消测试。"
-            read -r -p "按回车键返回主菜单..." 
-            continue
-        fi
-
-        DOMAIN="$input_domain"
-        LOG_INFO "正在测试 SNI 域名: ${BOLD}$DOMAIN${NC}"
-        SUB_DIVIDER
-
-        echo -e "\n${CYAN}[1/3] 解析域名 IP 地址${NC}"
-        if ping -c 1 -W 2 "$DOMAIN" > /dev/null 2>&1; then
-            LOG_SUCCESS "域名解析正常"
-        else
-            LOG_ERROR "无法解析域名 $DOMAIN，请检查域名是否正确或尝试其他域名。"
-            read -r -p "按回车键返回主菜单..." 
-            continue
-        fi
-
-        echo -e "\n${CYAN}[2/3] 测试 TLS 1.3 和 HTTP/2 支持情况${NC}"
-        CURL_OUTPUT=$(curl -I -v -s -o /dev/null --http2 --tlsv1.3 --connect-timeout 5 https://"$DOMAIN" 2>&1)
-
-        if echo "$CURL_OUTPUT" | grep -qi "ALPN, offering h2"; then
-             if echo "$CURL_OUTPUT" | grep -qi "ALPN, server accepted to use h2"; then
-                 LOG_SUCCESS "支持 HTTP/2 (h2)"
-             else
-                 LOG_WARN "未检测到服务端接受 HTTP/2 (h2)，部分环境可能影响伪装效果"
-             fi
-        else
-             LOG_WARN "本机 curl 未尝试或不支持 HTTP/2，请确保 curl 版本较新"
-        fi
-
-        if echo "$CURL_OUTPUT" | grep -qi "TLSv1.3"; then
-            LOG_SUCCESS "支持 TLS 1.3"
-        else
-            LOG_ERROR "目标网站不支持 TLS 1.3，绝对不能用于 VLESS-Reality！"
-            read -r -p "按回车键返回主菜单..." 
-            continue
-        fi
-
-        echo -e "\n${CYAN}[3/3] 测试从当前 VPS 访问该域名的延迟与连通性${NC}"
-        HTTP_CODE=$(curl -I -s -o /dev/null -w "%{http_code}" --connect-timeout 5 https://"$DOMAIN")
-
-        if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "301" || "$HTTP_CODE" == "302" ]]; then
-            LOG_SUCCESS "连通性极佳，HTTP 状态码: $HTTP_CODE"
-            TIME_TOTAL=$(curl -o /dev/null -s -w "%{time_total}\n" https://"$DOMAIN")
-            echo -e " ${GREEN}⏱️ 握手总耗时: ${TIME_TOTAL} 秒${NC}"
+        while true; do
+            clear
             DIVIDER
-            LOG_SUCCESS "结论: 测试完成！如果以上全部为绿色，则该域名非常适合作为您的 Reality SNI！"
-        else
-            LOG_ERROR "连通性不佳或被拦截，HTTP 状态码: $HTTP_CODE"
-            LOG_WARN "强烈建议换一个域名！"
+            echo -e "${BOLD}        [ 节点 SNI 域名连通性与 TLS 1.3 探测工具 ]        ${NC}"
             DIVIDER
-        fi
+            echo -e "  ${CYAN}--- 🇯🇵 日本 VPS 优质推荐 ---${NC}"
+            echo -e "   1) www.nintendo.co.jp   (任天堂)"
+            echo -e "   2) www.playstation.com  (索尼PS)"
+            echo -e "   3) www.u-tokyo.ac.jp    (东京大学)"
+            echo -e "   4) www.kyoto-u.ac.jp    (京都大学)"
+            echo -e "   5) www.honda.co.jp      (本田)"
+            echo -e "   6) www.toyota.co.jp     (丰田)"
+            echo -e "   7) www.mercari.com      (煤炉)"
+            echo -e "  ${CYAN}--- 🌍 全球通用后备推荐 ---${NC}"
+            echo -e "   8) www.apple.com"
+            echo -e "   9) swdist.apple.com"
+            echo -e "  10) www.microsoft.com"
+            echo -e "  11) update.microsoft.com"
+            echo -e "  12) www.amazon.com"
+            echo -e "  ${CYAN}--- 其他选项 ---${NC}"
+            echo -e "  13) ${YELLOW}手动输入自定义域名${NC}"
+            echo -e "  88) ${RED}[核武器] XTLS 官方 RealiTLScanner 扫描器 (全网自寻可用 SNI)${NC}"
+            echo -e "  99) ${GREEN}一键批量测试并生成深度极客检测报告${NC}"
+            echo -e "   0) 返回主菜单"
+            DIVIDER
+            
+            read -r -p "$(echo -e "${BOLD}请输入序号 [0-99]: ${NC}")" sni_choice
+            
+            DOMAIN=""
+            case $sni_choice in
+                1) DOMAIN="www.nintendo.co.jp" ;;
+                2) DOMAIN="www.playstation.com" ;;
+                3) DOMAIN="www.u-tokyo.ac.jp" ;;
+                4) DOMAIN="www.kyoto-u.ac.jp" ;;
+                5) DOMAIN="www.honda.co.jp" ;;
+                6) DOMAIN="www.toyota.co.jp" ;;
+                7) DOMAIN="www.mercari.com" ;;
+                8) DOMAIN="www.apple.com" ;;
+                9) DOMAIN="swdist.apple.com" ;;
+                10) DOMAIN="www.microsoft.com" ;;
+                11) DOMAIN="update.microsoft.com" ;;
+                12) DOMAIN="www.amazon.com" ;;
+                13) 
+                    read -r -p "$(echo -e "请输入需要测试的 ${CYAN}SNI 域名${NC}: ")" DOMAIN
+                    if [[ -z "$DOMAIN" ]]; then
+                        LOG_WARN "未输入域名，已取消。"
+                        sleep 1
+                        continue
+                    fi
+                    ;;
+                88)
+                    clear
+                    DIVIDER
+                    echo -e "${BOLD}     [ XTLS/RealiTLScanner 官方全网 SNI 精准扫描器 ]     ${NC}"
+                    DIVIDER
+                    LOG_INFO "正在获取 RealiTLScanner 最新版本..."
+                    
+                    arch=$(uname -m)
+                    case $arch in
+                        x86_64) dl_arch="amd64|64" ;;
+                        aarch64) dl_arch="arm64" ;;
+                        *) LOG_ERROR "不支持的架构: $arch" ; sleep 2 ; continue ;;
+                    esac
 
-        read -r -p "按回车键返回主菜单..." 
+                    if [ ! -x "./RealiTLScanner" ]; then
+                        api_url="https://api.github.com/repos/XTLS/RealiTLScanner/releases/latest"
+                        dl_url=$(curl -sSL "$api_url" | grep -oP '"browser_download_url": "\K[^"]*' | grep -i "linux" | grep -iE "($dl_arch)" | grep -v "sha256" | head -n 1)
+
+                        if [ -z "$dl_url" ]; then
+                            LOG_ERROR "获取下载链接失败，请检查网络或 GitHub 限制。"
+                            read -r -p "按回车键继续..." 
+                            continue
+                        fi
+
+                        LOG_INFO "正在下载: $dl_url"
+                        wget -qO scanner_pkg "$dl_url"
+                        
+                        # 智能判断文件类型并解包
+                        if head -c 4 scanner_pkg | grep -q "PK"; then
+                            unzip -qo scanner_pkg -d scanner_tmp
+                            find scanner_tmp -type f -name "*RealiTLScanner*" -exec mv {} ./RealiTLScanner \; 2>/dev/null
+                            rm -rf scanner_tmp scanner_pkg
+                        elif head -c 4 scanner_pkg | grep -q $'\x1f\x8b'; then
+                            mkdir -p scanner_tmp
+                            tar -xzf scanner_pkg -C scanner_tmp
+                            find scanner_tmp -type f -name "*RealiTLScanner*" -exec mv {} ./RealiTLScanner \; 2>/dev/null
+                            rm -rf scanner_tmp scanner_pkg
+                        else
+                            mv scanner_pkg ./RealiTLScanner
+                        fi
+                        
+                        chmod +x ./RealiTLScanner 2>/dev/null
+                        if [ ! -x "./RealiTLScanner" ]; then
+                            LOG_ERROR "解析二进制文件失败！"
+                            rm -f ./RealiTLScanner scanner_pkg
+                            read -r -p "按回车键继续..." 
+                            continue
+                        fi
+                        LOG_SUCCESS "RealiTLScanner 部署完成！"
+                    else
+                        LOG_INFO "检测到已安装 RealiTLScanner，准备就绪。"
+                    fi
+
+                    SUB_DIVIDER
+                    echo -e " ${YELLOW}推荐极客玩法:${NC}"
+                    echo -e "  - 输入 ${CYAN}1.1.1.1${NC} : 扫 Cloudflare IP 背后藏着的万千 SNI"
+                    echo -e "  - 输入 ${CYAN}1.2.3.0/24${NC} : 暴力横扫整个 IP 段内的可用 SNI"
+                    echo -e "  - 输入 ${CYAN}www.microsoft.com${NC} : 开启无限爬虫模式，顺藤摸瓜找同类域名"
+                    echo -e "  - 输入 ${CYAN}https://xxx.com${NC} : 自动爬取网页源码里的所有域名进行测试"
+                    SUB_DIVIDER
+                    
+                    read -r -p "$(echo -e "👉 请输入${GREEN}扫描目标${NC} [默认: 1.1.1.1]: ")" scan_target
+                    scan_target=${scan_target:-1.1.1.1}
+                    
+                    read -r -p "$(echo -e "👉 请输入${GREEN}并发线程数${NC} (越大小鸡越累) [默认: 100]: ")" scan_threads
+                    scan_threads=${scan_threads:-100}
+                    
+                    read -r -p "$(echo -e "👉 请输入单次探测${GREEN}超时时间${NC}(秒) [默认: 5]: ")" scan_timeout
+                    scan_timeout=${scan_timeout:-5}
+
+                    clear
+                    DIVIDER
+                    LOG_INFO "引擎轰鸣中... 目标: ${scan_target} | 线程: ${scan_threads} | 超时: ${scan_timeout}s"
+                    LOG_WARN "扫描过程会持续输出。若找到足够多满意的域名，请随时按 ${RED}Ctrl+C${NC} 停止扫描！"
+                    DIVIDER
+                    sleep 3
+                    
+                    rm -f out.csv
+                    
+                    # 允许用户 Ctrl+C 中断扫描而不退出主脚本
+                    trap 'echo -e "\n${YELLOW}[INFO] 用户手动中断了扫描操作，准备整理战利品...${NC}"' SIGINT
+                    
+                    if [[ "$scan_target" == http* ]]; then
+                        ./RealiTLScanner -url "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
+                    else
+                        ./RealiTLScanner -addr "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
+                    fi
+                    
+                    # 恢复默认的 SIGINT 行为 (允许在此之后正常退出脚本)
+                    trap - SIGINT
+                    
+                    echo -e "\n"
+                    DIVIDER
+                    LOG_SUCCESS "扫描操作已结束。"
+                    
+                    if [ -s "out.csv" ]; then
+                        read -r -p "是否查看本次扫出的可用 SNI 汇总表格？(y/n) [y]: " view_csv
+                        if [[ "$view_csv" != "n" && "$view_csv" != "N" ]]; then
+                            clear
+                            echo -e "${BOLD}       [ RealiTLScanner 战利品 (可用 SNI 列表) ]       ${NC}"
+                            echo "+-----------------+------------------------------------------+-----------------------+"
+                            echo "| 目标 IP         | 验证通过的证书域名 (SNI)                 | 证书签发机构          |"
+                            echo "+-----------------+------------------------------------------+-----------------------+"
+                            awk -F, 'NR>1 { 
+                                ip=$1; 
+                                domain=$3;
+                                if(length(domain) > 40) domain = substr(domain, 1, 37) "...";
+                                issuer=$4; 
+                                gsub(/"/, "", issuer);
+                                if(length(issuer) > 21) issuer = substr(issuer, 1, 18) "...";
+                                printf "| %-15s | %-40s | %-21s |\n", ip, domain, issuer 
+                            }' out.csv
+                            echo "+-----------------+------------------------------------------+-----------------------+"
+                            LOG_INFO "💡 选择一个心仪的 SNI，填入你的 Reality 面板的 Dest / SNI 选项中即可使用！"
+                            echo -e "${YELLOW}结果已永久保存在 $(pwd)/out.csv 中。${NC}"
+                        fi
+                    else
+                        LOG_WARN "本次扫描未找到符合 Reality 要求 (TLS 1.3 / H2) 的 SNI，建议更换目标重试。"
+                    fi
+                    
+                    read -r -p "按回车键返回菜单..."
+                    continue
+                    ;;
+                99)
+                    clear
+                    echo -e "\n正在执行深度批量检测，分析握手时间、证书与 CDN，请耐心等待...\n"
+                    
+                    DOMAIN_LIST="www.nintendo.co.jp www.playstation.com www.u-tokyo.ac.jp www.kyoto-u.ac.jp www.honda.co.jp www.toyota.co.jp www.mercari.com www.apple.com swdist.apple.com www.microsoft.com update.microsoft.com www.amazon.com"
+                    
+                    start_time=$SECONDS
+                    total_domains=0
+                    success_domains=0
+                    unsuited_count=0
+                    unnatural_count=0
+                    unnatural_list=""
+                    
+                    # 绘制表头
+                    echo "+--------------------------+----------+----------+----------+------+------+--------+----------+"
+                    echo "| 最终域名                 | 基础条件 | 握手时间 | 证书时间 | CDN  | 热门 | 推荐   | 页面状态 |"
+                    echo "+--------------------------+----------+----------+----------+------+------+--------+----------+"
+                    
+                    for d in $DOMAIN_LIST; do
+                        total_domains=$((total_domains + 1))
+                        tmp_headers=$(mktemp)
+                        
+                        curl_out=$(LC_ALL=C curl -I -s -w "%{time_appconnect} %{http_code}" --tlsv1.3 --connect-timeout 3 https://"$d" -D "$tmp_headers" -o /dev/null)
+                        curl_exit=$?
+                        
+                        if [ $curl_exit -ne 0 ] || [ -z "$curl_out" ]; then
+                            unsuited_count=$((unsuited_count + 1))
+                            rm -f "$tmp_headers"
+                            continue
+                        fi
+                        
+                        success_domains=$((success_domains + 1))
+                        read time_app http_code <<< "$curl_out"
+                        
+                        # 1. 解析握手时间
+                        hs_time_ms=$(awk -v t="$time_app" 'BEGIN {printf "%.0f", t * 1000}')
+                        hs_col="\033[0m"
+                        if [ -z "$hs_time_ms" ] || [ "$hs_time_ms" = "0" ]; then 
+                            hs_time_ms="-"
+                        else
+                            if [ "$hs_time_ms" -gt 400 ]; then hs_col="\033[31m"
+                            elif [ "$hs_time_ms" -gt 200 ]; then hs_col="\033[33m"
+                            else hs_col="\033[32m"; fi
+                            hs_time_ms="${hs_time_ms}ms"
+                        fi
+                        
+                        # 2. 解析证书有效天数
+                        cert_days="-"
+                        cert_col="\033[0m"
+                        if command -v openssl >/dev/null 2>&1; then
+                            end_date=$(echo | openssl s_client -servername "$d" -connect "$d:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+                            if [ -n "$end_date" ]; then
+                                if [ "$(uname)" = "Darwin" ]; then
+                                    end_sec=$(date -j -f "%b %d %T %Y %Z" "$end_date" +%s 2>/dev/null)
+                                else
+                                    end_sec=$(date -d "$end_date" +%s 2>/dev/null)
+                                fi
+                                if [ -n "$end_sec" ]; then
+                                    now_sec=$(date +%s)
+                                    diff_sec=$((end_sec - now_sec))
+                                    cert_days=$((diff_sec / 86400))
+                                fi
+                            fi
+                        fi
+                        if [ "$cert_days" != "-" ]; then
+                            if [ "$cert_days" -lt 30 ]; then cert_col="\033[31m"
+                            elif [ "$cert_days" -lt 60 ]; then cert_col="\033[33m"
+                            else cert_col="\033[32m"; fi
+                            cert_days="${cert_days}天"
+                        fi
+                        
+                        # 3. CDN 检测
+                        cdn_val="无"
+                        if grep -qiE 'cloudflare|akamai|fastly|cloudfront|cdn' "$tmp_headers"; then
+                            cdn_val="高"
+                        fi
+                        rm -f "$tmp_headers"
+                        
+                        # 4. 状态码与非自然统计
+                        stat_col="\033[0m"
+                        if [[ "$http_code" == "200" ]]; then
+                            stat_col="\033[32m"
+                        elif [[ "$http_code" == "404" ]]; then
+                            stat_col="\033[34m"
+                        else
+                            stat_col="\033[31m"
+                            unnatural_count=$((unnatural_count + 1))
+                            unnatural_list="${unnatural_list}  - 1个状态码 ${http_code} (${d})\n"
+                        fi
+                        
+                        # 5. 推荐星级计算
+                        rec_val="**"
+                        if [ "$cdn_val" = "无" ] && [ "${hs_time_ms%ms}" != "-" ] && [ "${hs_time_ms%ms}" -lt 250 ]; then
+                            rec_val="****"
+                        elif [ "${hs_time_ms%ms}" != "-" ] && [ "${hs_time_ms%ms}" -lt 400 ]; then
+                            rec_val="***"
+                        fi
+                        
+                        # ================= 表格 UI 对齐引擎 =================
+                        str_d=$(printf " %-24s " "$d")
+                        str_b="   ✓    "
+                        
+                        # 握手时间动态填充 (总宽 8)
+                        len_h=${#hs_time_ms}; pad_h=$((8 - len_h)); pl_h=$((pad_h / 2)); pr_h=$((pad_h - pl_h))
+                        str_h=$(printf "%*s%b%*s" "$pl_h" "" "${hs_col}${hs_time_ms}\033[0m" "$pr_h" "")
+                        
+                        # 证书天数动态填充 (中文占2宽，总视觉宽 8)
+                        v_width_c=0
+                        if [[ "$cert_days" == *"天" ]]; then v_width_c=$((${#cert_days} + 1)); else v_width_c=${#cert_days}; fi
+                        pad_c=$((8 - v_width_c)); pl_c=$((pad_c / 2)); pr_c=$((pad_c - pl_c))
+                        str_c=$(printf "%*s%b%*s" "$pl_c" "" "${cert_col}${cert_days}\033[0m" "$pr_c" "")
+                        
+                        # CDN动态填充
+                        if [ "$cdn_val" = "无" ]; then str_cdn=" \033[32m无\033[0m "; else str_cdn=" \033[31m高\033[0m "; fi
+                        
+                        str_hot="  - "
+                        
+                        # 推荐星级填充 (总宽 6)
+                        len_r=${#rec_val}; pad_r=$((6 - len_r)); pl_r=$((pad_r / 2)); pr_r=$((pad_r - pl_r))
+                        str_rec=$(printf "%*s%b%*s" "$pl_r" "" "\033[33m${rec_val}\033[0m" "$pr_r" "")
+                        
+                        # 状态码填充 (总宽 8)
+                        len_s=${#http_code}; pad_s=$((8 - len_s)); pl_s=$((pad_s / 2)); pr_s=$((pad_s - pl_s))
+                        str_s=$(printf "%*s%b%*s" "$pl_s" "" "${stat_col}${http_code}\033[0m" "$pr_s" "")
+                        
+                        # 渲染行
+                        echo "|${str_d}|${str_b}|${str_h}|${str_c}|${str_cdn}|${str_hot}|${str_rec}|${str_s}|"
+                        echo "+--------------------------+----------+----------+----------+------+------+--------+----------+"
+                    done
+                    
+                    end_time=$SECONDS
+                    total_time_s=$((end_time - start_time))
+                    
+                    success_rate=0
+                    if [ "$total_domains" -gt 0 ]; then
+                        success_rate=$((success_domains * 100 / total_domains))
+                    fi
+                    
+                    echo -e "\n${BOLD}批量检测报告${NC}"
+                    echo "总耗时: ${total_time_s}s"
+                    echo "检测域名: ${total_domains} 个"
+                    echo "成功率: ${success_rate}%"
+                    echo "适合性率: ${success_rate}%"
+                    echo ""
+                    
+                    if [ "$unsuited_count" -gt 0 ]; then
+                        echo "不适合的域名 (${unsuited_count}个):"
+                        echo "  - ${unsuited_count}个网络不可达或不支持 TLS 1.3"
+                        echo ""
+                    fi
+                    
+                    if [ "$unnatural_count" -gt 0 ]; then
+                        echo "状态码不自然的域名 (${unnatural_count}个):"
+                        echo -e "$unnatural_list"
+                    fi
+                    
+                    read -r -p "按回车键返回主菜单..." 
+                    continue
+                    ;;
+                0)
+                    break
+                    ;;
+                *)
+                    LOG_ERROR "无效的选项，请重新输入。"
+                    sleep 1
+                    continue
+                    ;;
+            esac
+            
+            # 单个域名详细测试逻辑
+            SUB_DIVIDER
+            LOG_INFO "正在测试 SNI 域名: ${BOLD}$DOMAIN${NC}"
+
+            echo -e "\n${CYAN}[1/3] 解析域名 IP 地址${NC}"
+            if ping -c 1 -W 2 "$DOMAIN" > /dev/null 2>&1; then
+                LOG_SUCCESS "域名解析正常"
+            else
+                LOG_ERROR "无法解析域名 $DOMAIN，请检查域名是否正确或尝试其他域名。"
+                read -r -p "按回车键继续..." 
+                continue
+            fi
+
+            echo -e "\n${CYAN}[2/3] 测试 TLS 1.3 和 HTTP/2 支持情况${NC}"
+            CURL_OUTPUT=$(curl -I -v -s -o /dev/null --http2 --tlsv1.3 --connect-timeout 5 https://"$DOMAIN" 2>&1)
+
+            if echo "$CURL_OUTPUT" | grep -qi "ALPN, offering h2"; then
+                 if echo "$CURL_OUTPUT" | grep -qi "ALPN, server accepted to use h2"; then
+                     LOG_SUCCESS "支持 HTTP/2 (h2)"
+                 else
+                     LOG_WARN "未检测到服务端接受 HTTP/2 (h2)，部分环境可能影响伪装效果"
+                 fi
+            else
+                 LOG_WARN "本机 curl 未尝试或不支持 HTTP/2，请确保 curl 版本较新"
+            fi
+
+            if echo "$CURL_OUTPUT" | grep -qi "TLSv1.3"; then
+                LOG_SUCCESS "支持 TLS 1.3"
+            else
+                LOG_ERROR "目标网站不支持 TLS 1.3，绝对不能用于 VLESS-Reality！"
+                read -r -p "按回车键继续..." 
+                continue
+            fi
+
+            echo -e "\n${CYAN}[3/3] 测试从当前 VPS 访问该域名的延迟与连通性${NC}"
+            HTTP_CODE=$(curl -I -s -o /dev/null -w "%{http_code}" --connect-timeout 5 https://"$DOMAIN")
+
+            if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "301" || "$HTTP_CODE" == "302" ]]; then
+                LOG_SUCCESS "连通性极佳，HTTP 状态码: $HTTP_CODE"
+                TIME_TOTAL=$(curl -o /dev/null -s -w "%{time_total}\n" https://"$DOMAIN")
+                echo -e " ${GREEN}⏱️ 握手总耗时: ${TIME_TOTAL} 秒${NC}"
+                DIVIDER
+                LOG_SUCCESS "结论: 测试完成！如果以上全部为绿色，则该域名非常适合作为您的 Reality SNI！"
+            else
+                LOG_ERROR "连通性不佳或被拦截，HTTP 状态码: $HTTP_CODE"
+                LOG_WARN "强烈建议换一个域名！"
+                DIVIDER
+            fi
+
+            read -r -p "按回车键继续..." 
+        done
 
     elif [[ "$main_choice" == "4" ]]; then
         clear
