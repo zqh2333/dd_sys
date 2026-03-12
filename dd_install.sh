@@ -45,8 +45,8 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-LOG_SUCCESS "系统环境就绪，校验完毕。"
-sleep 1
+LOG_SUCCESS "系统环境就绪，交互逻辑已极致优化。"
+sleep 0.5
 
 while true; do
     clear
@@ -113,8 +113,7 @@ while true; do
             printf -v display_time "%02d:%02d" "$curr_hr" "$curr_min"
             echo -e " 当前已设定的任务: ${GREEN}每天 ${BOLD}${display_time}${NC}${GREEN} (北京时间) 自动重启${NC}"
             SUB_DIVIDER
-            read -r -p "请选择操作 (y: 修改时间 / d: 删除该任务 / n: 保持并返回) [n]: " modify_reboot
-            modify_reboot=${modify_reboot:-n}
+            read -r -p "$(echo -e "👉 请选择操作: [${GREEN}直接回车${NC}]修改时间 | [${RED}d${NC}]删除任务 | [${YELLOW}n${NC}]返回菜单 : ")" modify_reboot
             
             if [[ "$modify_reboot" == "d" || "$modify_reboot" == "D" ]]; then
                 reboot_cmd_path=$(command -v reboot || echo "/sbin/reboot")
@@ -124,7 +123,7 @@ while true; do
                 LOG_SUCCESS "定时重启任务已成功删除！"
                 sleep 1.5
                 continue
-            elif [[ "$modify_reboot" != "y" && "$modify_reboot" != "Y" ]]; then
+            elif [[ "$modify_reboot" == "n" || "$modify_reboot" == "N" ]]; then
                 continue
             fi
         else
@@ -282,7 +281,7 @@ while true; do
                     
                     rm -f out.csv
                     
-                    trap 'echo -e "\n${YELLOW}[INFO] 用户手动中断了扫描操作，准备整理并质检战利品...${NC}"' SIGINT
+                    trap 'echo -e "\n${YELLOW}[INFO] 用户手动中断了扫描操作，准备自动整理并质检战利品...${NC}"' SIGINT
                     
                     if [[ "$scan_target" == http* ]]; then
                         ./RealiTLScanner -url "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
@@ -294,52 +293,48 @@ while true; do
                     
                     echo -e "\n"
                     DIVIDER
-                    LOG_SUCCESS "初级扫描操作已结束。"
+                    LOG_SUCCESS "初扫结束，正在无缝唤醒 RealityChecker 进行二次质检分析..."
+                    sleep 1
                     
                     if [ -s "out.csv" ]; then
-                        read -r -p "是否立即调用 RealityChecker 对扫出的 SNI 进行深度二次质检 (防墙/验CDN/避热门)？(y/n) [y]: " run_rc
-                        if [[ "$run_rc" != "n" && "$run_rc" != "N" ]]; then
-                            LOG_INFO "正在部署 RealityChecker 质检组件..."
-                            
-                            rc_arch_name=""
-                            case $(uname -m) in
-                                x86_64) rc_arch_name="amd64" ;;
-                                aarch64) rc_arch_name="arm64" ;;
-                            esac
+                        rc_arch_name=""
+                        case $(uname -m) in
+                            x86_64) rc_arch_name="amd64" ;;
+                            aarch64) rc_arch_name="arm64" ;;
+                        esac
 
-                            if [ ! -x "./reality-checker" ] && [ -n "$rc_arch_name" ]; then
-                                rc_url="https://github.com/V2RaySSR/RealityChecker/releases/latest/download/reality-checker-linux-${rc_arch_name}.zip"
-                                wget -qO rc_tmp.zip "$rc_url"
-                                unzip -qo rc_tmp.zip -d rc_tmp_dir
-                                find rc_tmp_dir -type f -name "*reality-checker*" -exec mv {} ./reality-checker \; 2>/dev/null
-                                chmod +x reality-checker 2>/dev/null
-                                rm -rf rc_tmp_dir rc_tmp.zip
-                            fi
+                        if [ ! -x "./reality-checker" ] && [ -n "$rc_arch_name" ]; then
+                            rc_url="https://github.com/V2RaySSR/RealityChecker/releases/latest/download/reality-checker-linux-${rc_arch_name}.zip"
+                            wget -qO rc_tmp.zip "$rc_url"
+                            unzip -qo rc_tmp.zip -d rc_tmp_dir
+                            find rc_tmp_dir -type f -name "*reality-checker*" -exec mv {} ./reality-checker \; 2>/dev/null
+                            chmod +x reality-checker 2>/dev/null
+                            rm -rf rc_tmp_dir rc_tmp.zip
+                        fi
 
-                            if [ -x "./reality-checker" ]; then
-                                clear
-                                DIVIDER
-                                echo -e "${BOLD}       [ RealityChecker 自动深度质检报告 ]       ${NC}"
-                                DIVIDER
-                                ./reality-checker csv out.csv
-                                echo -e "\n${YELLOW}💡 原始盲扫数据已保留在 $(pwd)/out.csv 中。${NC}"
-                            else
-                                LOG_ERROR "RealityChecker 组件加载失败，已为您降级为基础表格显示："
-                                echo "+-----------------+------------------------------------------+-----------------------+"
-                                echo "| 目标 IP         | 验证通过的证书域名 (SNI)                 | 证书签发机构          |"
-                                echo "+-----------------+------------------------------------------+-----------------------+"
-                                awk -F, 'NR>1 { 
-                                    ip=$1; 
-                                    domain=$3;
-                                    if(length(domain) > 40) domain = substr(domain, 1, 37) "...";
-                                    issuer=$4; 
-                                    gsub(/"/, "", issuer);
-                                    if(length(issuer) > 21) issuer = substr(issuer, 1, 18) "...";
-                                    printf "| %-15s | %-40s | %-21s |\n", ip, domain, issuer 
-                                }' out.csv
-                                echo "+-----------------+------------------------------------------+-----------------------+"
-                                echo -e "${YELLOW}结果保存在 $(pwd)/out.csv 中。${NC}"
-                            fi
+                        if [ -x "./reality-checker" ]; then
+                            clear
+                            DIVIDER
+                            echo -e "${BOLD}       [ RealityChecker 自动深度质检报告 ]       ${NC}"
+                            DIVIDER
+                            ./reality-checker csv out.csv
+                            echo -e "\n${YELLOW}💡 原始盲扫数据已自动保留在 $(pwd)/out.csv 中。${NC}"
+                        else
+                            LOG_ERROR "RealityChecker 组件加载失败，已为您降级为基础表格显示："
+                            echo "+-----------------+------------------------------------------+-----------------------+"
+                            echo "| 目标 IP         | 验证通过的证书域名 (SNI)                 | 证书签发机构          |"
+                            echo "+-----------------+------------------------------------------+-----------------------+"
+                            awk -F, 'NR>1 { 
+                                ip=$1; 
+                                domain=$3;
+                                if(length(domain) > 40) domain = substr(domain, 1, 37) "...";
+                                issuer=$4; 
+                                gsub(/"/, "", issuer);
+                                if(length(issuer) > 21) issuer = substr(issuer, 1, 18) "...";
+                                printf "| %-15s | %-40s | %-21s |\n", ip, domain, issuer 
+                            }' out.csv
+                            echo "+-----------------+------------------------------------------+-----------------------+"
+                            echo -e "${YELLOW}结果保存在 $(pwd)/out.csv 中。${NC}"
                         fi
                     else
                         LOG_WARN "本次扫描未找到任何符合要求的 SNI，可能是目标被封禁或不匹配。"
@@ -352,7 +347,6 @@ while true; do
                     clear
                     echo -e "\n正在执行深度批量检测，分析握手时间、证书与 CDN，请耐心等待...\n"
                     
-                    # 已将你提供的去重高优域名全部整合进此库
                     DOMAIN_LIST="www.nintendo.co.jp www.playstation.com www.u-tokyo.ac.jp www.kyoto-u.ac.jp www.honda.co.jp www.toyota.co.jp www.mercari.com www.apple.com swdist.apple.com www.microsoft.com update.microsoft.com www.amazon.com amd.com apps.mzstatic.com aws.com azure.microsoft.com beacon.gtv-pub.com bing.com catalog.gamepass.com cdn-dynmedia-1.microsoft.com cdn.bizibly.com devblogs.microsoft.com fpinit.itunes.apple.com go.microsoft.com gray-config-prod.api.arc-cdn.net gray.video-player.arcpublishing.com r.bing.com services.digitaleast.mobi snap.licdn.com tag-logger.demandbase.com tag.demandbase.com ts1.tc.mm.bing.net"
                     
                     start_time=$SECONDS
@@ -599,17 +593,11 @@ while true; do
         DIVIDER
         
         if [ -d "$HOME/.acme.sh" ] || command -v acme.sh >/dev/null 2>&1; then
-            LOG_WARN "检测到系统已安装过 acme.sh 证书环境。"
-            read -r -p "是否继续拉取专属脚本并覆盖执行？(y/n) [n]: " override_ssl
-            override_ssl=${override_ssl:-n}
-            if [[ "$override_ssl" != "y" && "$override_ssl" != "Y" ]]; then
-                LOG_INFO "已取消 SSL 配置任务，保留现有环境。"
-                sleep 1
-                continue
-            fi
+            LOG_INFO "检测到系统已安装过 acme.sh 环境，正在直接调用您的专属脚本..."
+        else
+            LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
         fi
 
-        LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
         SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/acme.sh"
         curl -sSL -o ssl_manager.sh "$SSL_URL"
         
@@ -659,7 +647,7 @@ while true; do
                             echo "$input_hostname" > /etc/hostname
                             hostname "$input_hostname"
                         fi
-                        LOG_SUCCESS "主机名已设置为: ${BOLD}$input_hostname${NC} (重连 SSH 后生效)"
+                        LOG_SUCCESS "主机名已成功设置为: ${BOLD}$input_hostname${NC}"
                     else
                         LOG_INFO "未发生改变，已跳过。"
                     fi
@@ -709,20 +697,10 @@ while true; do
                     if [[ "$SWAP_VAL" -gt 0 ]] && [[ "$SWAP_VAL" =~ ^[0-9]+$ ]]; then
                         current_swap=$(free -m | awk '/^Swap:/{print $2}')
                         if [[ "$current_swap" -gt 0 ]]; then
-                            LOG_WARN "系统当前已存在 ${current_swap} MB 的 Swap 挂载。"
-                            read -r -p "是否要卸载原有 Swap 并强行按照新配置重建？(y/n) [n]: " override_swap
-                            override_swap=${override_swap:-n}
-                            
-                            if [[ "$override_swap" == "y" || "$override_swap" == "Y" ]]; then
-                                LOG_INFO "正在卸载旧配置..."
-                                swapoff -a >/dev/null 2>&1
-                                rm -f /swapfile
-                                sed -i '/swap/d' /etc/fstab
-                            else
-                                LOG_INFO "已取消重建。"
-                                sleep 1
-                                continue
-                            fi
+                            LOG_INFO "检测到系统存在旧的 Swap (${current_swap} MB)，正在为您自动卸载并重建..."
+                            swapoff -a >/dev/null 2>&1
+                            rm -f /swapfile
+                            sed -i '/swap/d' /etc/fstab
                         fi
 
                         LOG_INFO "正在为您创建 ${SWAP_VAL}MB 的 Swap 文件，请稍候..."
@@ -773,7 +751,7 @@ while true; do
                         echo -e " 当前内核: ${CYAN}${kernel_full}${NC}"
                         echo -e " 加速状态: ${accel_status}"
                         DIVIDER
-                        echo -e "  ${GREEN}1) [推荐] 一键智能极致优化${NC} (自动检测环境/开启BBR/优化TCP并发)"
+                        echo -e "  ${GREEN}1) [推荐] 一键智能极致优化${NC} (自动检测环境/强刷BBR/优化TCP并发)"
                         echo -e "  ${YELLOW}2) [进阶] 安装第三方魔改内核${NC} (调用外部脚本，适合旧版系统)"
                         echo -e "  ${RED}9) [清理] 恢复系统网络默认值${NC}"
                         echo -e "  ${NC}0) 返回上一级${NC}"
@@ -786,20 +764,13 @@ while true; do
                             1)
                                 SUB_DIVIDER
                                 if [[ "$current_cc" == *"bbr"* ]]; then
-                                    LOG_WARN "系统当前已开启 BBR 网络加速。"
-                                    read -r -p "是否强制重新注入高并发 TCP 优化配置？(y/n) [n]: " override_bbr
-                                    override_bbr=${override_bbr:-n}
-                                    if [[ "$override_bbr" != "y" && "$override_bbr" != "Y" ]]; then
-                                        LOG_INFO "已跳过网络重置。"
-                                        sleep 1
-                                        continue
-                                    fi
+                                    LOG_INFO "系统已开启 BBR，正在为您强制刷新并覆盖高并发 TCP 优化参数..."
+                                else
+                                    LOG_INFO "正在执行智能网络优化流程..."
                                 fi
-
-                                LOG_INFO "正在执行智能网络优化流程..."
                                 
                                 if [[ "$virt_type" == *"openvz"* || "$virt_type" == *"lxc"* || "$virt_type" == *"OpenVZ"* ]]; then
-                                    LOG_WARN "容器虚拟化 ($virt_type)，将尝试强制开启原生 BBR..."
+                                    LOG_WARN "检测到容器虚拟化 ($virt_type)，将尝试强制要求宿主机支持原生 BBR..."
                                 fi
 
                                 if [[ $(echo "$kernel_version >= 4.9" | bc 2>/dev/null || echo 1) -eq 1 ]]; then
@@ -809,7 +780,7 @@ while true; do
                                     echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
                                 fi
 
-                                LOG_INFO "注入高级网络吞吐量优化参数..."
+                                LOG_INFO "正在注入高级网络吞吐量优化参数..."
                                 for key in fs.file-max net.ipv4.tcp_tw_reuse net.ipv4.ip_local_port_range net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.core.somaxconn net.ipv4.tcp_max_syn_backlog net.ipv4.tcp_fastopen; do
                                     sed -i "/^${key}/d" /etc/sysctl.conf
                                 done
@@ -836,19 +807,19 @@ EOF
                                 
                                 current_cc_check=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
                                 if [[ "$current_cc_check" == *"bbr"* ]]; then
-                                    LOG_SUCCESS "大功告成！原生 BBR 与高并发参数已生效。"
+                                    LOG_SUCCESS "配置大功告成！原生 BBR 与高并发参数已生效。"
                                 else
-                                    LOG_WARN "高并发参数已生效，但 BBR 可能受限于宿主机不支持。"
+                                    LOG_WARN "高并发参数已生效，但 BBR 开启失败 (极可能宿主机不支持)。"
                                 fi
                                 sleep 2
                                 ;;
                                 
                             2)
                                 SUB_DIVIDER
-                                LOG_WARN "警告: 在新系统或 OpenVZ 上强换魔改内核极易导致失联！"
+                                LOG_WARN "警告: 在新系统或 OpenVZ 上强换魔改内核极易导致系统失联变砖！"
                                 read -r -p "确认要继续吗？(y/n) [n]: " confirm_kernel
                                 if [[ "$confirm_kernel" == "y" || "$confirm_kernel" == "Y" ]]; then
-                                    LOG_INFO "拉取核心组件中..."
+                                    LOG_INFO "正在拉取核心组件..."
                                     wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
                                     if [[ -f tcp_net.sh ]]; then
                                         chmod +x tcp_net.sh
@@ -863,7 +834,7 @@ EOF
                                 
                             9)
                                 SUB_DIVIDER
-                                LOG_INFO "清理加速与 TCP 参数..."
+                                LOG_INFO "正在清理所有加速与自定义 TCP 参数..."
                                 sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
                                 sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
                                 sed -i '/fs.file-max/d' /etc/sysctl.conf
@@ -873,7 +844,7 @@ EOF
                                 echo "net.core.default_qdisc=pfifo_fast" >> /etc/sysctl.conf
                                 echo "net.ipv4.tcp_congestion_control=cubic" >> /etc/sysctl.conf
                                 sysctl -p >/dev/null 2>&1
-                                LOG_SUCCESS "已恢复系统默认网络配置。"
+                                LOG_SUCCESS "已完全恢复系统默认网络配置。"
                                 sleep 2
                                 ;;
                                 
@@ -884,11 +855,11 @@ EOF
                     ;;
                 5)
                     SUB_DIVIDER
-                    read -r -p "$(echo -e "请输入新的 ${CYAN}Root 密码${NC} (留空则取消): ")" new_root_pwd
+                    read -r -p "$(echo -e "请输入新的 ${CYAN}Root 密码${NC} (留空则跳过): ")" new_root_pwd
                     if [[ -n "$new_root_pwd" ]]; then
                         echo "root:$new_root_pwd" | chpasswd
                         if [[ $? -eq 0 ]]; then
-                            LOG_SUCCESS "Root 密码已成功修改！请牢记新密码。"
+                            LOG_SUCCESS "Root 密码已成功修改！请务必牢记新密码。"
                         else
                             LOG_ERROR "密码修改失败！"
                         fi
@@ -899,7 +870,6 @@ EOF
                     fi
                     ;;
                 0)
-                    LOG_SUCCESS "正在返回主菜单..."
                     break 
                     ;;
                 *)
