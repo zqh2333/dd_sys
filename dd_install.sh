@@ -85,8 +85,8 @@ while true; do
             echo -e "  12) www.amazon.com"
             echo -e "  ${CYAN}--- 其他选项 ---${NC}"
             echo -e "  13) ${YELLOW}手动输入自定义域名${NC}"
-            echo -e "  88) ${RED}[核武器] XTLS 官方 RealiTLScanner 扫描器 (全网自寻可用 SNI)${NC}"
-            echo -e "  99) ${GREEN}一键批量测试并生成深度极客检测报告${NC}"
+            echo -e "  88) ${RED}[核武器] XTLS官方扫描器 + RealityChecker 深度质检${NC}"
+            echo -e "  99) ${GREEN}一键批量测试并生成深度极客检测报告 (内置推荐库)${NC}"
             echo -e "   0) 返回主菜单"
             DIVIDER
             
@@ -117,7 +117,7 @@ while true; do
                 88)
                     clear
                     DIVIDER
-                    echo -e "${BOLD}     [ XTLS/RealiTLScanner 官方全网 SNI 精准扫描器 ]     ${NC}"
+                    echo -e "${BOLD}     [ RealiTLScanner 盲扫 + RealityChecker 质检引擎 ]     ${NC}"
                     DIVIDER
                     LOG_INFO "正在获取 RealiTLScanner 最新版本..."
                     
@@ -141,7 +141,6 @@ while true; do
                         LOG_INFO "正在下载: $dl_url"
                         wget -qO scanner_pkg "$dl_url"
                         
-                        # 智能判断文件类型并解包
                         if head -c 4 scanner_pkg | grep -q "PK"; then
                             unzip -qo scanner_pkg -d scanner_tmp
                             find scanner_tmp -type f -name "*RealiTLScanner*" -exec mv {} ./RealiTLScanner \; 2>/dev/null
@@ -194,7 +193,7 @@ while true; do
                     rm -f out.csv
                     
                     # 允许用户 Ctrl+C 中断扫描而不退出主脚本
-                    trap 'echo -e "\n${YELLOW}[INFO] 用户手动中断了扫描操作，准备整理战利品...${NC}"' SIGINT
+                    trap 'echo -e "\n${YELLOW}[INFO] 用户手动中断了扫描操作，准备整理并质检战利品...${NC}"' SIGINT
                     
                     if [[ "$scan_target" == http* ]]; then
                         ./RealiTLScanner -url "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
@@ -202,36 +201,60 @@ while true; do
                         ./RealiTLScanner -addr "$scan_target" -thread "$scan_threads" -timeout "$scan_timeout" -out out.csv
                     fi
                     
-                    # 恢复默认的 SIGINT 行为 (允许在此之后正常退出脚本)
+                    # 恢复默认的 SIGINT 行为
                     trap - SIGINT
                     
                     echo -e "\n"
                     DIVIDER
-                    LOG_SUCCESS "扫描操作已结束。"
+                    LOG_SUCCESS "初级扫描操作已结束。"
                     
                     if [ -s "out.csv" ]; then
-                        read -r -p "是否查看本次扫出的可用 SNI 汇总表格？(y/n) [y]: " view_csv
-                        if [[ "$view_csv" != "n" && "$view_csv" != "N" ]]; then
-                            clear
-                            echo -e "${BOLD}       [ RealiTLScanner 战利品 (可用 SNI 列表) ]       ${NC}"
-                            echo "+-----------------+------------------------------------------+-----------------------+"
-                            echo "| 目标 IP         | 验证通过的证书域名 (SNI)                 | 证书签发机构          |"
-                            echo "+-----------------+------------------------------------------+-----------------------+"
-                            awk -F, 'NR>1 { 
-                                ip=$1; 
-                                domain=$3;
-                                if(length(domain) > 40) domain = substr(domain, 1, 37) "...";
-                                issuer=$4; 
-                                gsub(/"/, "", issuer);
-                                if(length(issuer) > 21) issuer = substr(issuer, 1, 18) "...";
-                                printf "| %-15s | %-40s | %-21s |\n", ip, domain, issuer 
-                            }' out.csv
-                            echo "+-----------------+------------------------------------------+-----------------------+"
-                            LOG_INFO "💡 选择一个心仪的 SNI，填入你的 Reality 面板的 Dest / SNI 选项中即可使用！"
-                            echo -e "${YELLOW}结果已永久保存在 $(pwd)/out.csv 中。${NC}"
+                        read -r -p "是否立即调用 RealityChecker 对扫出的 SNI 进行深度二次质检 (防墙/验CDN/避热门)？(y/n) [y]: " run_rc
+                        if [[ "$run_rc" != "n" && "$run_rc" != "N" ]]; then
+                            LOG_INFO "正在部署 RealityChecker 质检组件..."
+                            
+                            rc_arch_name=""
+                            case $(uname -m) in
+                                x86_64) rc_arch_name="amd64" ;;
+                                aarch64) rc_arch_name="arm64" ;;
+                            esac
+
+                            if [ ! -x "./reality-checker" ] && [ -n "$rc_arch_name" ]; then
+                                rc_url="https://github.com/V2RaySSR/RealityChecker/releases/latest/download/reality-checker-linux-${rc_arch_name}.zip"
+                                wget -qO rc_tmp.zip "$rc_url"
+                                unzip -qo rc_tmp.zip -d rc_tmp_dir
+                                find rc_tmp_dir -type f -name "*reality-checker*" -exec mv {} ./reality-checker \; 2>/dev/null
+                                chmod +x reality-checker 2>/dev/null
+                                rm -rf rc_tmp_dir rc_tmp.zip
+                            fi
+
+                            if [ -x "./reality-checker" ]; then
+                                clear
+                                DIVIDER
+                                echo -e "${BOLD}       [ RealityChecker 自动深度质检报告 ]       ${NC}"
+                                DIVIDER
+                                ./reality-checker csv out.csv
+                                echo -e "\n${YELLOW}💡 原始盲扫数据已保留在 $(pwd)/out.csv 中。${NC}"
+                            else
+                                LOG_ERROR "RealityChecker 组件加载失败，已为您降级为基础表格显示："
+                                echo "+-----------------+------------------------------------------+-----------------------+"
+                                echo "| 目标 IP         | 验证通过的证书域名 (SNI)                 | 证书签发机构          |"
+                                echo "+-----------------+------------------------------------------+-----------------------+"
+                                awk -F, 'NR>1 { 
+                                    ip=$1; 
+                                    domain=$3;
+                                    if(length(domain) > 40) domain = substr(domain, 1, 37) "...";
+                                    issuer=$4; 
+                                    gsub(/"/, "", issuer);
+                                    if(length(issuer) > 21) issuer = substr(issuer, 1, 18) "...";
+                                    printf "| %-15s | %-40s | %-21s |\n", ip, domain, issuer 
+                                }' out.csv
+                                echo "+-----------------+------------------------------------------+-----------------------+"
+                                echo -e "${YELLOW}结果保存在 $(pwd)/out.csv 中。${NC}"
+                            fi
                         fi
                     else
-                        LOG_WARN "本次扫描未找到符合 Reality 要求 (TLS 1.3 / H2) 的 SNI，建议更换目标重试。"
+                        LOG_WARN "本次扫描未找到任何符合基本要求的 SNI，可能是目标 IP 封禁或端口错误，请换个目标重试。"
                     fi
                     
                     read -r -p "按回车键返回菜单..."
