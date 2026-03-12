@@ -1,8 +1,30 @@
-#!/usr/bin/env bash
+#!/bin/sh
+# ==========================================
+# 阶段一：跨平台基础环境自举 (纯 sh 语法，无脑兼容各大纯净系统)
+# ==========================================
+if ! command -v bash >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v wget >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1 || ! command -v bc >/dev/null 2>&1; then
+    echo "[INFO] 检测到基础环境不全，正在自动安装必要组件 (bash, curl, wget, awk, bc)..."
+    if [ -f /etc/alpine-release ]; then
+        apk update >/dev/null 2>&1 && apk add --no-cache bash curl wget socat iproute2 gawk bc >/dev/null 2>&1
+    elif [ -f /etc/debian_version ]; then
+        apt-get update -y >/dev/null 2>&1 && apt-get install -y bash curl wget socat iproute2 gawk bc >/dev/null 2>&1
+    elif [ -f /etc/redhat-release ]; then
+        yum clean all >/dev/null 2>&1 && yum install -y bash curl wget socat iproute gawk bc >/dev/null 2>&1
+    fi
+fi
 
 # ==========================================
-# 终端色彩及日志输出美化函数 (纯字符无 Emoji 兼容版)
+# 阶段二：核心魔法 - 解释器升维
 # ==========================================
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
+# ==========================================
+# 阶段三：主业务逻辑 (完全运行于 Bash 环境)
+# ==========================================
+
+# --- 全局终端色彩及日志输出美化函数 ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -18,63 +40,36 @@ LOG_ERROR() { echo -e "${RED}[ERROR]${NC} $1"; }
 DIVIDER() { echo -e "${BLUE}=========================================================${NC}"; }
 SUB_DIVIDER() { echo -e "${CYAN}---------------------------------------------------------${NC}"; }
 
-# ==========================================
-# 跨平台环境自举与检查
-# ==========================================
-# 检查是否为 root 用户 (使用 id -u 替代 $EUID，兼容性更强)
+# --- 权限检查 ---
 if [ "$(id -u)" != "0" ]; then
     LOG_ERROR "权限不足！请使用 root 用户运行此脚本。"
     exit 1
 fi
 
-LOG_INFO "正在初始化脚本环境，自动更新系统并安装必要依赖..."
-
-# 封装依赖安装逻辑，兼容各大发行版
-install_dependencies() {
-    if [ -f /etc/alpine-release ]; then
-        apk update >/dev/null 2>&1
-        apk add --no-cache bash wget curl socat iproute2 gawk bc >/dev/null 2>&1
-    elif [ -f /etc/debian_version ]; then
-        apt-get update -y >/dev/null 2>&1
-        apt-get install -y bash wget curl socat iproute2 gawk bc >/dev/null 2>&1
-    elif [ -f /etc/redhat-release ]; then
-        yum clean all >/dev/null 2>&1
-        yum install -y bash wget curl socat iproute gawk bc >/dev/null 2>&1
-    else
-        LOG_WARN "未识别的操作系统版本，将尝试跳过依赖安装步骤..."
-    fi
-}
-
-install_dependencies
-
-# 双重安全校验：确保核心依赖已成功挂载
-for pkg in curl wget bash awk ip bc; do
-    if ! command -v $pkg >/dev/null 2>&1; then
-        LOG_ERROR "致命错误：核心依赖 '$pkg' 安装失败！请检查服务器网络或软件源。"
-        exit 1
-    fi
-done
-
-LOG_SUCCESS "系统更新与依赖检查完毕，环境就绪。"
+LOG_SUCCESS "系统环境就绪，校验完毕。"
 sleep 1
 
 # ==========================================
-# 主菜单循环框架 (逻辑保持原样，未作修改)
+# 主菜单循环框架
 # ==========================================
 while true; do
     clear
     DIVIDER
-    echo -e "${BOLD}        全平台 DD 重装与系统环境/SSL配置工具 (三合一版)      ${NC}"
+    echo -e "${BOLD}        全平台 DD 重装与系统环境/SSL配置工具 (终极版)        ${NC}"
     DIVIDER
     echo -e "  ${GREEN}1) [系统] 一键 DD 重装系统${NC} (支持 Linux / Windows 互刷)"
     echo -e "  ${CYAN}2) [环境] 独立配置系统环境${NC} (主机名/时区/Swap/BBR/改密码)"
     echo -e "  ${YELLOW}3) [证书] 自动申请/续签 SSL 证书${NC} (调用专属 SSL-Renewal)"
-    echo -e "  ${NC}0) 退出脚本${NC}"
+    echo -e "  ${RED}0) 退出脚本${NC}"
     DIVIDER
+    
     read -r -p "$(echo -e "${BOLD}请输入序号选择功能 [0-3]: ${NC}")" main_choice
-    main_choice=${main_choice:-1}
+    main_choice=${main_choice:-1} # 默认值为 1
 
     if [[ "$main_choice" == "3" ]]; then
+        # --------------------------------------------------
+        # 模块 3: SSL 证书申请
+        # --------------------------------------------------
         clear
         DIVIDER
         echo -e "${BOLD}              [ SSL 证书自动申请与续签工具 ]               ${NC}"
@@ -82,8 +77,8 @@ while true; do
         LOG_INFO "正在从您的专属仓库 (zqh2333/SSL-Renewal) 拉取 SSL 脚本..."
         
         SSL_URL="https://raw.githubusercontent.com/zqh2333/SSL-Renewal/main/acme.sh"
-        
         curl -sSL -o ssl_manager.sh "$SSL_URL"
+        
         if grep -q "404: Not Found" ssl_manager.sh || [[ ! -s ssl_manager.sh ]]; then
             LOG_ERROR "获取 SSL 脚本失败！请检查您的 SSL-Renewal 仓库中是否存在 acme.sh 文件。"
             rm -f ssl_manager.sh
@@ -104,6 +99,9 @@ while true; do
         read -r -p "按回车键返回主菜单..." 
 
     elif [[ "$main_choice" == "2" ]]; then
+        # --------------------------------------------------
+        # 模块 2: 系统环境独立配置面板
+        # --------------------------------------------------
         while true; do
             clear
             DIVIDER
@@ -116,6 +114,7 @@ while true; do
             echo -e "  ${CYAN}5) 修改 Root 登录密码${NC}"
             echo -e "  ${GREEN}0) 返回上一菜单${NC}"
             DIVIDER
+            
             read -r -p "$(echo -e "${BOLD}请选择要执行的配置项 [0-5]: ${NC}")" env_choice
             
             case $env_choice in
@@ -148,7 +147,7 @@ while true; do
                     SUB_DIVIDER
                     read -r -p "$(echo -e "请输入需要添加的${CYAN}Swap 大小(MB)${NC} [1024]: ")" input_swap
                     SWAP_VAL=${input_swap:-1024}
-                    if [[ "$SWAP_VAL" -gt 0 ]]; then
+                    if [[ "$SWAP_VAL" -gt 0 ]] && [[ "$SWAP_VAL" =~ ^[0-9]+$ ]]; then
                         if swapon --show | grep -q "/swapfile"; then
                             LOG_WARN "检测到已存在 Swap，跳过创建。"
                         else
@@ -163,137 +162,153 @@ while true; do
                             LOG_SUCCESS "Swap (${SWAP_VAL} MB) 创建并挂载成功!"
                         fi
                     else
-                        LOG_WARN "输入值为 0 或非法，已取消。"
+                        LOG_WARN "输入值非法，已取消。"
                     fi
                     read -r -p "按回车键继续..." 
                     ;;
                 4)
                     while true; do
                         clear
-                        # --- 增强型状态与推荐逻辑 ---
+                        DIVIDER
+                        echo -e "${BOLD}              [ 网络加速与智能内核优化面板 ]               ${NC}"
+                        DIVIDER
+                        
+                        # --- 核心智能检测引擎 ---
                         kernel_version=$(uname -r | awk -F. '{print $1"."$2}')
                         kernel_full=$(uname -r)
                         current_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
                         
-                        # 检测内核是否支持 BBR (4.9以上)
-                        if [[ $(echo "$kernel_version >= 4.9" | bc) -eq 1 ]]; then
-                            support_bbr=true
-                            recommend_action="使用标准 BBR (内核已原生支持，最稳最快)"
-                            recommend_code="A"
+                        # 1. 虚拟化环境检测
+                        if [ -f /proc/user_beancounters ]; then
+                            virt_type="OpenVZ"
+                        elif command -v systemd-detect-virt >/dev/null 2>&1; then
+                            virt_type=$(systemd-detect-virt)
                         else
-                            support_bbr=false
-                            recommend_action="安装 BBRplus 或锐速内核 (当前内核版本太旧)"
-                            recommend_code="B"
+                            virt_type="KVM/Unknown"
                         fi
 
-                        # 检测当前运行状态
+                        # 2. 状态推断
                         if [[ "$current_cc" == "bbr" ]]; then
-                            accel_status="已开启标准 BBR"
+                            accel_status="${GREEN}已开启官方 BBR${NC}"
                         elif [[ "$current_cc" == "bbrplus" ]]; then
-                            accel_status="已开启 BBRplus"
-                        elif [[ -n "$(lsmod | grep appex)" ]]; then
-                            accel_status="已开启 锐速(Lotserver)"
+                            accel_status="${GREEN}已开启 BBRplus${NC}"
+                        elif [[ -n "$(lsmod 2>/dev/null | grep appex)" ]]; then
+                            accel_status="${GREEN}已开启 锐速(Lotserver)${NC}"
                         else
-                            accel_status="未开启加速 (当前: $current_cc)"
+                            accel_status="${YELLOW}未完全优化 (当前: ${current_cc:-无})${NC}"
                         fi
 
-                        echo -e "———————————— BBR 智能加速面板 ————————————"
+                        echo -e " 架构类型: ${CYAN}${virt_type}${NC}"
                         echo -e " 当前内核: ${CYAN}${kernel_full}${NC}"
-                        echo -e " 当前状态: ${YELLOW}${accel_status}${NC}"
-                        echo -e " 推荐操作: ${GREEN}${recommend_action}${NC}"
-                        echo -e "—————————————————————————————————————————"
-                        echo -e " ${BOLD}${YELLOW}R) [一键执行] 开启系统推荐的加速方案${NC}"
-                        echo -e "—————————————————————————————————————————"
-                        echo -e " 1. 开启标准 BBR (FQ)"
-                        echo -e " 2. 安装 BBRplus 内核并加速 (适合高丢包)"
-                        echo -e " 3. 安装 锐速(Lotserver) 内核并加速"
-                        echo -e " 4. 开启 BBR魔改版加速 (需特定内核)"
-                        echo -e " 9. 卸载全部加速并恢复默认"
-                        echo -e " 10. 系统参数高级优化 (提升并发能力)"
-                        echo -e " 0. 返回上一级"
-                        echo -e "—————————————————————————————————————————"
+                        echo -e " 加速状态: ${accel_status}"
+                        DIVIDER
+                        echo -e "  ${GREEN}1) [推荐] 一键智能极致优化${NC} (自动检测环境/开启BBR/优化TCP并发)"
+                        echo -e "  ${YELLOW}2) [进阶] 安装第三方魔改内核${NC} (调用外部脚本，适合旧版系统)"
+                        echo -e "  ${RED}9) [清理] 恢复系统网络默认值${NC}"
+                        echo -e "  ${NC}0) 返回上一级${NC}"
+                        DIVIDER
                         
-                        read -r -p " 请输入序号: " bbr_choice
-                        
-                        # 处理推荐逻辑的快捷键
-                        if [[ "$bbr_choice" == "r" || "$bbr_choice" == "R" ]]; then
-                            if [[ "$recommend_code" == "A" ]]; then bbr_choice=1; else bbr_choice=2; fi
-                        fi
+                        read -r -p "$(echo -e "${BOLD}请输入序号 [1]: ${NC}")" bbr_choice
+                        bbr_choice=${bbr_choice:-1}
 
                         case $bbr_choice in
                             1)
                                 SUB_DIVIDER
-                                if [[ "$support_bbr" == "true" ]]; then
-                                    LOG_INFO "正在开启官方标准 BBR..."
+                                LOG_INFO "开始执行智能网络优化流程..."
+                                
+                                # 步骤A: 虚拟化防御机制
+                                if [[ "$virt_type" == *"openvz"* || "$virt_type" == *"lxc"* || "$virt_type" == *"OpenVZ"* ]]; then
+                                    LOG_WARN "检测到容器虚拟化 ($virt_type)，无法修改底层内核限制。"
+                                    LOG_INFO "将尝试直接开启原生 BBR (需宿主机支持)..."
+                                else
+                                    LOG_INFO "检测到独立内核环境 ($virt_type)，安全校验通过。"
+                                fi
+
+                                # 步骤B: 内核要求校验与 BBR 开启
+                                if [[ $(echo "$kernel_version >= 4.9" | bc 2>/dev/null || echo 1) -eq 1 ]]; then
+                                    LOG_INFO "正在配置 TCP BBR 拥塞控制算法..."
                                     sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
                                     sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
                                     echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
                                     echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-                                    sysctl -p >/dev/null 2>&1
-                                    LOG_SUCCESS "标准 BBR 开启成功！"
                                 else
-                                    LOG_WARN "当前内核版本 ($kernel_version) 过低，无法直接开启 BBR，请先安装新内核。"
+                                    LOG_WARN "内核版本 ($kernel_version) 较老，无法保证 BBR 原生支持！建议使用菜单 2 升级内核。"
                                 fi
-                                read -r -p "按回车键继续..." 
-                                ;;
-                            2|3|4)
-                                SUB_DIVIDER
-                                LOG_INFO "正在拉取核心组件进行内核级操作..."
-                                wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
-                                if [[ -f tcp_net.sh ]]; then
-                                    chmod +x tcp_net.sh
-                                    [[ "$bbr_choice" == "2" ]] && target_num=2
-                                    [[ "$bbr_choice" == "3" ]] && target_num=3
-                                    [[ "$bbr_choice" == "4" ]] && target_num=5
-                                    bash tcp_net.sh
-                                    rm -f tcp_net.sh
-                                else
-                                    LOG_ERROR "获取组件失败，请检查网络。"
-                                fi
-                                read -r -p "按回车键继续..." 
-                                ;;
-                            9)
-                                SUB_DIVIDER
-                                LOG_INFO "正在卸载加速..."
-                                sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
-                                echo "net.core.default_qdisc=pfifo_fast" >> /etc/sysctl.conf
-                                echo "net.ipv4.tcp_congestion_control=cubic" >> /etc/sysctl.conf
-                                sysctl -p >/dev/null 2>&1
-                                LOG_SUCCESS "已恢复系统默认加速。"
-                                read -r -p "按回车键继续..." 
-                                ;;
-                            10)
-                                SUB_DIVIDER
-                                LOG_INFO "应用高级优化参数 (1GB 内存专用版)..."
-                                cat > /etc/security/limits.conf << EOF
-* soft nofile 1000000
-* hard nofile 1000000
-root soft nofile 1000000
-root hard nofile 1000000
-EOF
-                                ulimit -n 1000000
-                                sed -i '/fs.file-max/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_tw_reuse/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.ip_local_port_range/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_rmem/d' /etc/sysctl.conf
-                                sed -i '/net.ipv4.tcp_wmem/d' /etc/sysctl.conf
-                                sed -i '/net.core.somaxconn/d' /etc/sysctl.conf
+
+                                # 步骤C: 高级 TCP 与并发参数优化
+                                LOG_INFO "正在注入高级网络吞吐量优化参数..."
+                                
+                                for key in fs.file-max net.ipv4.tcp_tw_reuse net.ipv4.ip_local_port_range net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.core.somaxconn net.ipv4.tcp_max_syn_backlog net.ipv4.tcp_fastopen; do
+                                    sed -i "/^${key}/d" /etc/sysctl.conf
+                                done
+
                                 cat >> /etc/sysctl.conf << EOF
 fs.file-max = 1000000
 net.ipv4.tcp_tw_reuse = 1
 net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.tcp_rmem = 4096 87380 67108864
 net.ipv4.tcp_wmem = 4096 65536 67108864
-net.core.somaxconn = 4096
-net.ipv4.tcp_max_syn_backlog = 4096
+net.core.somaxconn = 8192
+net.ipv4.tcp_max_syn_backlog = 8192
+net.ipv4.tcp_fastopen = 3
 net.ipv4.tcp_slow_start_after_idle = 0
-net.ipv4.ip_forward = 1
 EOF
+                                cat > /etc/security/limits.conf << EOF
+* soft nofile 1000000
+* hard nofile 1000000
+root soft nofile 1000000
+root hard nofile 1000000
+EOF
+                                ulimit -n 1000000 2>/dev/null
+                                
                                 sysctl -p >/dev/null 2>&1
-                                LOG_SUCCESS "参数优化完成！"
+                                current_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+                                
+                                if [[ "$current_cc" == *"bbr"* ]]; then
+                                    LOG_SUCCESS "智能优化大功告成！原生 BBR 与高并发参数已生效。"
+                                else
+                                    LOG_WARN "高并发参数已生效，但 BBR 开启失败 (可能受限于宿主机或极老内核)。"
+                                fi
                                 read -r -p "按回车键继续..." 
                                 ;;
+                                
+                            2)
+                                SUB_DIVIDER
+                                LOG_WARN "即将调用第三方脚本。请注意：在较新系统或 OpenVZ 上强换内核极易导致系统失联变砖！"
+                                read -r -p "确认要继续吗？(y/n) [n]: " confirm_kernel
+                                if [[ "$confirm_kernel" == "y" || "$confirm_kernel" == "Y" ]]; then
+                                    LOG_INFO "正在拉取核心组件..."
+                                    wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" -O tcp_net.sh >/dev/null 2>&1
+                                    if [[ -f tcp_net.sh ]]; then
+                                        chmod +x tcp_net.sh
+                                        bash tcp_net.sh
+                                        rm -f tcp_net.sh
+                                    else
+                                        LOG_ERROR "获取组件失败，请检查网络。"
+                                    fi
+                                else
+                                    LOG_INFO "已取消操作。"
+                                fi
+                                read -r -p "按回车键继续..." 
+                                ;;
+                                
+                            9)
+                                SUB_DIVIDER
+                                LOG_INFO "正在清理所有加速与自定义 TCP 参数..."
+                                sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+                                sed -i '/fs.file-max/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.tcp_/d' /etc/sysctl.conf
+                                sed -i '/net.core.somaxconn/d' /etc/sysctl.conf
+                                sed -i '/net.ipv4.ip_local_port_range/d' /etc/sysctl.conf
+                                
+                                echo "net.core.default_qdisc=pfifo_fast" >> /etc/sysctl.conf
+                                echo "net.ipv4.tcp_congestion_control=cubic" >> /etc/sysctl.conf
+                                sysctl -p >/dev/null 2>&1
+                                LOG_SUCCESS "已完全恢复系统网络默认值。"
+                                read -r -p "按回车键继续..." 
+                                ;;
+                                
                             0) break ;;
                             *) LOG_ERROR "输入有误" ; sleep 1 ;;
                         esac
@@ -326,18 +341,21 @@ EOF
         done
 
     elif [[ "$main_choice" == "1" ]]; then
+        # --------------------------------------------------
+        # 模块 1: DD 重装系统引擎
+        # --------------------------------------------------
         clear
         DIVIDER
         echo -e "${BOLD}        [ 全平台/全网络/全自动 DD 重装脚本 (底层引擎) ]      ${NC}"
         DIVIDER
 
         LOG_INFO "正在探测当前网络拓扑结构..."
-        MAIN_IP=$(ip -4 route get 8.8.8.8 | grep -oP 'src \K\S+')
-        GATEWAY=$(ip -4 route show default | grep -oP 'via \K\S+' | head -n 1)
-        INTERFACE=$(ip -4 route get 8.8.8.8 | grep -oP 'dev \K\S+' | head -n 1)
+        MAIN_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+')
+        GATEWAY=$(ip -4 route show default 2>/dev/null | grep -oP 'via \K\S+' | head -n 1)
+        INTERFACE=$(ip -4 route get 8.8.8.8 2>/dev/null | grep -oP 'dev \K\S+' | head -n 1)
 
         if [[ -n "$INTERFACE" ]]; then
-            SUBNET_PREFIX=$(ip -o -f inet addr show "$INTERFACE" | awk '{print $4}' | cut -d/ -f2 | head -n 1)
+            SUBNET_PREFIX=$(ip -o -f inet addr show "$INTERFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f2 | head -n 1)
             if [[ -n "$SUBNET_PREFIX" ]]; then
                 mask=$((0xffffffff << (32 - SUBNET_PREFIX)))
                 NETMASK="$(( (mask >> 24) & 0xff )).$(( (mask >> 16) & 0xff )).$(( (mask >> 8) & 0xff )).$(( mask & 0xff ))"
@@ -351,9 +369,9 @@ EOF
         fi
 
         LOG_SUCCESS "网络探测完成："
-        echo -e "   - 公网 IP  : ${BOLD}$MAIN_IP${NC}"
-        echo -e "   - 网关     : ${BOLD}$GATEWAY${NC}"
-        echo -e "   - 子网掩码 : ${BOLD}$NETMASK${NC}"
+        echo -e "   - 公网 IP  : ${BOLD}${MAIN_IP:-未知}${NC}"
+        echo -e "   - 网关     : ${BOLD}${GATEWAY:-未知}${NC}"
+        echo -e "   - 子网掩码 : ${BOLD}${NETMASK:-未知}${NC}"
         DIVIDER
         echo -e ">> 开始交互式配置 (直接按回车键将使用 ${CYAN}中括号${NC} 内的默认值)"
         SUB_DIVIDER
@@ -402,6 +420,10 @@ EOF
                 4) OS_CMD="windows 2019" ; OS_NAME="Windows Server 2019" ;;
                 *) OS_CMD="windows 10" ; OS_NAME="Windows 10 LTSC 2021" ;;
             esac
+        else
+            LOG_ERROR "无效的系统类型选择。"
+            sleep 1
+            continue
         fi
 
         SUB_DIVIDER
@@ -428,7 +450,7 @@ EOF
             echo -e "连接端口 : 默认 3389"
         fi
         DIVIDER
-        LOG_WARN "继续操作将格式化整个硬盘，所有数据将永久丢失！"
+        LOG_WARN "警告：继续操作将格式化整个硬盘，当前系统所有数据将永久丢失！"
         read -r -p "$(echo -e "确认无误并开始执行重装？(y/n) [n]: ")" confirm_install
         confirm_install=${confirm_install:-n}
 
@@ -454,15 +476,19 @@ EOF
             sleep 3
             reboot
         else
-            LOG_ERROR "引擎执行失败。"
+            LOG_ERROR "引擎执行失败，请检查网络或配置信息。"
             read -r -p "按回车键返回主菜单..." 
         fi
 
     elif [[ "$main_choice" == "0" ]]; then
-        LOG_SUCCESS "已退出工具！"
+        # --------------------------------------------------
+        # 退出模块
+        # --------------------------------------------------
+        clear
+        LOG_SUCCESS "已退出全平台配置工具，祝您使用愉快！"
         exit 0
     else
-        LOG_ERROR "无效的选项。"
+        LOG_ERROR "无效的选项，请输入 0-3 之间的数字。"
         sleep 1
     fi
 done
